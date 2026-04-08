@@ -105,6 +105,45 @@ def test_lint_catches_mathtex():
     assert any("LaTeX" in e or "MathTex" in e for e in errors)
 
 
+def test_lint_catches_fadeout_at_end():
+    bad = GOOD_CODE.replace(
+        "self.wait(1)",
+        "self.play(FadeOut(title))\n        self.wait(1)"
+    )
+    errors = lint_manim_code(bad)
+    assert any("fade out" in e.lower() or "FadeOut" in e for e in errors)
+
+
+def test_lint_allows_fadeout_in_middle():
+    code = """\
+from manim import *
+
+class MainScene(Scene):
+    def construct(self):
+        def fit(mobj, max_w=11.0, max_h=6.0):
+            s = min(max_w / mobj.width, max_h / mobj.height, 1.0)
+            if s < 1.0:
+                mobj.scale(s)
+            return mobj
+        a = Text("a", font_size=44)
+        b = Text("b", font_size=44)
+        self.play(Write(a))
+        self.play(FadeOut(a))
+        self.play(Write(b))
+        self.wait(2)
+"""
+    assert lint_manim_code(code) == []
+
+
+def test_lint_catches_uncreate_at_end():
+    bad = GOOD_CODE.replace(
+        "self.wait(1)",
+        "self.play(Uncreate(title))\n        self.wait(1)"
+    )
+    errors = lint_manim_code(bad)
+    assert any("Uncreate" in e for e in errors)
+
+
 def test_lint_catches_fit_call_without_definition():
     bad = """\
 from manim import *

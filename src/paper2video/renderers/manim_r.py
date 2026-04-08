@@ -33,6 +33,22 @@ HARD RULES — violating any of these will break the pipeline:
 8. Animations should feel like 3Blue1Brown: smooth transforms, progressive reveals,
    highlights, arrows, diagrams. NOT a static slide with a title and bullets.
 
+=== ENDING RULE — CRITICAL ===
+
+NEVER end the scene with FadeOut, Uncreate, Unwrite, or any disappearance animation.
+NEVER call self.play(FadeOut(...)) as your last animation.
+The final visual composition MUST remain on screen at the end of the scene.
+
+Why: the pipeline freezes the last frame and holds it to match the narration audio length.
+If you fade everything out, the held frame is black, and the viewer stares at a black screen
+while the narrator is still talking. This is a critical bug.
+
+Correct ending pattern: after all your animations, use `self.wait(N)` where N is sized so
+the total scene duration matches the target. Leave the diagram on screen.
+DO NOT clean up. DO NOT fade out. Just wait. The next scene will cut in cleanly.
+
+=== END ENDING RULE ===
+
 === SAFE AREA — CRITICAL, READ TWICE ===
 
 Manim's frame is exactly 14.22 units wide and 8.0 units tall, centered at ORIGIN.
@@ -249,6 +265,31 @@ def lint_manim_code(code: str) -> list[str]:
         if s.startswith("import ") or s.startswith("from "):
             if not (s.startswith("from manim") or s == "from manim import *"):
                 errors.append(f"Line {i}: forbidden import. Only `from manim import *` is allowed.")
+
+    # 7. Last animation must not be a disappearance — pipeline freezes last frame.
+    #    Find all self.play(...) calls and check that the LAST one doesn't fade things out.
+    play_indices = [i for i, line in enumerate(lines) if "self.play(" in line]
+    if play_indices:
+        last_play_line = play_indices[-1]
+        # Collect lines until matching closing paren — naive, but enough for our case
+        chunk = []
+        depth = 0
+        for j in range(last_play_line, min(len(lines), last_play_line + 30)):
+            chunk.append(lines[j])
+            depth += lines[j].count("(") - lines[j].count(")")
+            if depth <= 0 and j > last_play_line:
+                break
+        chunk_text = "\n".join(chunk)
+        forbidden_endings = ["FadeOut(", "Uncreate(", "Unwrite("]
+        for token in forbidden_endings:
+            if token in chunk_text:
+                errors.append(
+                    f"Line {last_play_line + 1}: last self.play() uses {token.rstrip('(')} — "
+                    f"the scene must NOT fade out at the end. Pipeline freezes the final "
+                    f"frame to match audio length, so fading out leaves the viewer staring "
+                    f"at black. End with self.wait(N) instead and leave content on screen."
+                )
+                break
 
     return errors
 
