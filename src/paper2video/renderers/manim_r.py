@@ -1,0 +1,389 @@
+"""Manim-based scene renderer.
+
+Flow:
+  1. Ask the LLM to generate a Manim Scene class for a given description + duration.
+  2. Write the code to a temp .py file and invoke the manim CLI.
+  3. On failure, feed stderr back to the LLM and retry up to `max_retries` times.
+  4. Return the path to the rendered mp4 (silent video).
+"""
+from __future__ import annotations
+import shutil
+import subprocess
+import sys
+import textwrap
+from dataclasses import dataclass
+from pathlib import Path
+
+from ..llm import LLMClient
+from ..types import Scene
+
+
+CODEGEN_SYSTEM = """You are an expert Manim Community Edition (v0.18+) animation programmer.
+You write short, reliable Manim scene classes that render without errors.
+
+HARD RULES — violating any of these will break the pipeline:
+1. Output ONLY Python code. No prose. No markdown code fences. No explanation.
+2. The file must define exactly one class named `MainScene` that inherits from `Scene`.
+3. Import only from `manim`. Do not import numpy, scipy, or anything else.
+4. DO NOT use Tex, MathTex, or anything requiring LaTeX. Use `Text` and `MarkupText` only.
+5. DO NOT use external assets (SVG, images, fonts) — only built-in Manim objects.
+6. The total animation wall-clock duration must be approximately {duration:.1f} seconds.
+   Use `run_time=` on `self.play(...)` and `self.wait(...)` to pace the scene.
+7. Use a dark background (Manim's default) with light text. Good colors: WHITE, YELLOW, BLUE, GREEN, RED, GREY_A.
+8. Animations should feel like 3Blue1Brown: smooth transforms, progressive reveals,
+   highlights, arrows, diagrams. NOT a static slide with a title and bullets.
+
+=== SAFE AREA — CRITICAL, READ TWICE ===
+
+Manim's frame is exactly 14.22 units wide and 8.0 units tall, centered at ORIGIN.
+That means visible coordinates run from x=-7.11 to x=+7.11 and y=-4.0 to y=+4.0.
+
+You MUST keep ALL visible content inside a SAFE AREA of:
+   width  ≤ 12.0 units  (so x stays between -6.0 and +6.0)
+   height ≤ 6.5 units   (so y stays between -3.25 and +3.25)
+
+THE NUMBER ONE BUG TO AVOID:
+`scale_to_fit_width` and `scale_to_fit_height` scale UP as well as down. If you call
+`Text("Hi", font_size=48).scale_to_fit_width(10)` on text that is naturally 3 units wide,
+Manim will MULTIPLY its size by 3.3x and you get a giant 10-unit-wide title that fills the
+whole screen. NEVER use `scale_to_fit_width` or `scale_to_fit_height` directly on Text.
+
+INSTEAD, use this helper pattern. ALWAYS define `fit` at the top of construct() and use it:
+
+    def fit(mobj, max_w=11.0, max_h=6.0):
+        # Only shrinks, never enlarges.
+        s = min(max_w / mobj.width, max_h / mobj.height, 1.0)
+        if s < 1.0:
+            mobj.scale(s)
+        return mobj
+
+Then use `fit(title)` and `fit(diagram)` instead of `scale_to_fit_width`.
+
+Mandatory patterns to keep things in bounds:
+
+(a) Pick font sizes DIRECTLY. Do not rely on auto-scaling. Safe values:
+        - Big title (1-3 short words):  font_size=56
+        - Normal title:                  font_size=44
+        - Subtitle / scene heading:      font_size=36
+        - Body text, labels in diagrams: font_size=28
+        - Small caption text:            font_size=22
+
+(b) Long titles must wrap or be shrunk. After creating, ALWAYS run through fit():
+        title = Text("A Knowledge Base That Compounds", font_size=44)
+        fit(title, max_w=11.5)
+        title.to_edge(UP, buff=0.6)
+
+(c) Build diagrams with VGroup + .arrange(), then fit() the whole group, then move_to(ORIGIN):
+        row = VGroup(box_a, box_b, box_c).arrange(RIGHT, buff=1.0)
+        fit(row, max_w=11.0, max_h=4.5)
+        row.move_to(ORIGIN)
+
+(d) DO NOT call `.shift(DOWN * 3)` or any shift larger than 2 units AFTER positioning a
+    group. If a group is at ORIGIN and you shift it DOWN*4, it goes off the bottom of the
+    frame. Use .next_to() or .arrange() with buff to control spacing instead.
+
+(e) For a title-on-top + diagram-in-middle layout, use a single VGroup:
+        layout = VGroup(title, diagram).arrange(DOWN, buff=0.6)
+        fit(layout, max_w=12.0, max_h=6.5)
+        layout.move_to(ORIGIN)
+
+(f) buff>=0.6 in .to_edge() and .arrange() to keep margins.
+
+=== END SAFE AREA ===
+
+Available Manim primitives you should use liberally:
+- Text, MarkupText (for rich text)
+- Circle, Square, Rectangle, RoundedRectangle, Line, Arrow, DoubleArrow, Dot
+- VGroup (group and position multiple objects)
+- Create, Write, FadeIn, FadeOut, Transform, ReplacementTransform, Indicate, Flash
+- .move_to, .next_to, .scale, .arrange(direction, buff=...), .to_edge(direction, buff=...)
+- UP, DOWN, LEFT, RIGHT, ORIGIN, UL, UR, DL, DR
+- self.play(anim1, anim2, run_time=2)
+- self.wait(1)
+
+Worked example of a SAFE scene structure — COPY THIS PATTERN:
+
+    from manim import *
+
+    class MainScene(Scene):
+        def construct(self):
+            def fit(mobj, max_w=11.0, max_h=6.0):
+                s = min(max_w / mobj.width, max_h / mobj.height, 1.0)
+                if s < 1.0:
+                    mobj.scale(s)
+                return mobj
+
+            title = Text("The Wiki Pattern", font_size=44)
+            fit(title, max_w=11.0)
+            title.to_edge(UP, buff=0.6)
+
+            box_a = RoundedRectangle(width=2.6, height=1.4, color=BLUE)
+            box_b = RoundedRectangle(width=2.6, height=1.4, color=GREEN)
+            box_c = RoundedRectangle(width=2.6, height=1.4, color=YELLOW)
+            label_a = Text("SOURCES", font_size=24).move_to(box_a)
+            label_b = Text("WIKI", font_size=24).move_to(box_b)
+            label_c = Text("SCHEMA", font_size=24).move_to(box_c)
+            group_a = VGroup(box_a, label_a)
+            group_b = VGroup(box_b, label_b)
+            group_c = VGroup(box_c, label_c)
+
+            row = VGroup(group_a, group_b, group_c).arrange(RIGHT, buff=1.0)
+            fit(row, max_w=11.0, max_h=4.0)
+            row.move_to(ORIGIN)
+
+            self.play(Write(title), run_time=1.5)
+            self.play(FadeIn(group_a, shift=UP*0.3), run_time=1)
+            self.play(FadeIn(group_b, shift=UP*0.3), run_time=1)
+            self.play(FadeIn(group_c, shift=UP*0.3), run_time=1)
+            self.wait(1)
+
+Notice: `fit` is defined inside construct(), every text has an explicit reasonable
+font_size, the diagram is grouped + arranged + fit + moved to ORIGIN. NO arbitrary shifts.
+Your output MUST follow this structure.
+"""
+
+CODEGEN_USER = """Generate a Manim scene for scene {scene_id} of an explainer video.
+
+NARRATION (this is what the viewer hears — your animation must illustrate it):
+\"\"\"
+{narration}
+\"\"\"
+
+VISUAL DIRECTION:
+{visual_direction}
+
+TARGET DURATION: {duration:.1f} seconds
+
+Write a complete Python file defining `class MainScene(Scene)`. Output code only.
+"""
+
+RETRY_USER = """Your previous Manim code failed to render. Fix it.
+
+PREVIOUS CODE:
+```python
+{previous_code}
+```
+
+ERROR OUTPUT (last 60 lines):
+```
+{error_tail}
+```
+
+Output the fully corrected code only. No explanation. No fences. Remember the HARD RULES.
+"""
+
+LINT_RETRY_USER = """Your previous Manim code failed our static safety checks. Fix it.
+
+PREVIOUS CODE:
+```python
+{previous_code}
+```
+
+LINT ERRORS:
+{lint_errors}
+
+Output the fully corrected code only. No explanation. No fences.
+Remember: define `fit(mobj, max_w, max_h)` inside construct() and use it instead of
+scale_to_fit_width/scale_to_fit_height. Pick explicit reasonable font sizes (44 for titles,
+28 for body). Never .shift() by more than 2 units.
+"""
+
+
+@dataclass
+class ManimRenderError(Exception):
+    message: str
+    stderr: str
+    last_code: str
+
+    def __str__(self) -> str:
+        return self.message
+
+
+def lint_manim_code(code: str) -> list[str]:
+    """Static checks against the patterns we know cause cutoffs and render failures.
+
+    Returns a list of error messages. Empty list means the code passed lint.
+    """
+    errors: list[str] = []
+    lines = code.splitlines()
+
+    # 1. Must define MainScene
+    if "class MainScene" not in code:
+        errors.append("Missing `class MainScene(Scene):` — the entry point.")
+
+    # 2. Must not use Tex/MathTex (LaTeX dependency)
+    for i, line in enumerate(lines, start=1):
+        stripped = line.split("#", 1)[0]  # ignore comments
+        if "MathTex(" in stripped or "Tex(" in stripped and "Text(" not in stripped:
+            errors.append(f"Line {i}: uses Tex/MathTex which requires LaTeX. Use Text() instead.")
+
+    # 3. CRITICAL: scale_to_fit_width / scale_to_fit_height called directly on text-like
+    #    objects scales them UP if they're smaller than the target. We forbid these calls
+    #    entirely; the code should use the fit() helper instead.
+    for i, line in enumerate(lines, start=1):
+        stripped = line.split("#", 1)[0]
+        if "scale_to_fit_width" in stripped or "scale_to_fit_height" in stripped:
+            errors.append(
+                f"Line {i}: uses scale_to_fit_width/height which can ENLARGE small objects "
+                f"and cause cutoff. Use the fit() helper instead — it only shrinks."
+            )
+
+    # 4. Must define a `fit` helper inside construct() (or not call it at all).
+    if "fit(" in code and "def fit(" not in code:
+        errors.append("Code calls fit(...) but never defines `def fit(mobj, ...):` inside construct().")
+
+    # 5. Catch arbitrary large shifts that push things off-screen.
+    import re
+    shift_pattern = re.compile(r"\.shift\s*\(\s*(?:UP|DOWN|LEFT|RIGHT)\s*\*\s*(\d+(?:\.\d+)?)")
+    for i, line in enumerate(lines, start=1):
+        m = shift_pattern.search(line)
+        if m and float(m.group(1)) > 2.5:
+            errors.append(
+                f"Line {i}: .shift() with magnitude > 2.5 will likely push content off-screen. "
+                f"Use .arrange() or .next_to() instead."
+            )
+
+    # 6. Must not import anything other than from manim
+    for i, line in enumerate(lines, start=1):
+        s = line.strip()
+        if s.startswith("import ") or s.startswith("from "):
+            if not (s.startswith("from manim") or s == "from manim import *"):
+                errors.append(f"Line {i}: forbidden import. Only `from manim import *` is allowed.")
+
+    return errors
+
+
+def _strip_code_fences(raw: str) -> str:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        # Remove opening fence (```python or ```)
+        first_nl = raw.find("\n")
+        if first_nl != -1:
+            raw = raw[first_nl + 1 :]
+        if raw.endswith("```"):
+            raw = raw[: -3]
+    return raw.strip()
+
+
+def _run_manim(code_file: Path, out_media_dir: Path, quality: str = "l") -> tuple[int, str, Path | None]:
+    """Invoke the manim CLI. Returns (returncode, stderr_tail, rendered_mp4_or_None)."""
+    # Quality flags: -ql=low 480p15, -qm=medium 720p30, -qh=high 1080p60
+    cmd = [
+        sys.executable, "-m", "manim",
+        f"-q{quality}",
+        "--disable_caching",
+        "--media_dir", str(out_media_dir),
+        "--output_file", "MainScene",
+        str(code_file), "MainScene",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    tail = "\n".join(combined.strip().splitlines()[-60:])
+
+    # Find the rendered MP4 — Manim writes to:
+    #   <media_dir>/videos/<script_stem>/<quality_dir>/MainScene.mp4
+    quality_dirs = {"l": "480p15", "m": "720p30", "h": "1080p60", "k": "2160p60"}
+    qdir = quality_dirs.get(quality, "480p15")
+    rendered = out_media_dir / "videos" / code_file.stem / qdir / "MainScene.mp4"
+    if proc.returncode == 0 and rendered.exists():
+        return 0, tail, rendered
+    return proc.returncode or 1, tail, None
+
+
+def _compose_visual_direction(spec: dict) -> str:
+    """Turn a scene's visual_spec into a compact instruction block for the code-gen LLM."""
+    parts = []
+    if "title" in spec:
+        parts.append(f"Title/heading: {spec['title']}")
+    if "direction" in spec:
+        parts.append(f"Animation direction: {spec['direction']}")
+    if "elements" in spec:
+        parts.append(f"Elements to show: {', '.join(spec['elements'])}")
+    if "bullets" in spec and spec["bullets"]:
+        parts.append("Points to emphasize (animate them in progressively, do not just list):")
+        for b in spec["bullets"]:
+            parts.append(f"  - {b}")
+    if "caption" in spec:
+        parts.append(f"Closing beat: {spec['caption']}")
+    return "\n".join(parts) if parts else "(no specific direction — invent something illustrative)"
+
+
+def render_manim_scene(
+    scene: Scene,
+    duration_sec: float,
+    out_dir: Path,
+    llm: LLMClient,
+    quality: str = "m",
+    max_retries: int = 3,
+) -> Path:
+    """Generate and render a Manim scene, retrying on failure.
+
+    Returns the path to the rendered silent MP4.
+    Raises ManimRenderError after all retries exhausted.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resume: if a rendered clip already exists from a previous run, reuse it.
+    final = out_dir / f"scene_{scene.id:03d}.mp4"
+    if final.exists() and final.stat().st_size > 0:
+        return final
+
+    scene_work = out_dir / f"scene_{scene.id:03d}_work"
+    scene_work.mkdir(parents=True, exist_ok=True)
+
+    code_file = scene_work / f"scene_{scene.id:03d}.py"
+    media_dir = scene_work / "media"
+
+    visual_direction = _compose_visual_direction(scene.visual_spec or {})
+    user_prompt = CODEGEN_USER.format(
+        scene_id=scene.id,
+        narration=scene.narration,
+        visual_direction=visual_direction,
+        duration=duration_sec,
+    )
+    system_prompt = CODEGEN_SYSTEM.format(duration=duration_sec)
+
+    last_code = ""
+    last_err = ""
+    last_lint: list[str] = []
+    for attempt in range(max_retries + 1):
+        if attempt == 0:
+            raw = llm.complete(user_prompt, system=system_prompt)
+        elif last_lint:
+            retry_prompt = LINT_RETRY_USER.format(
+                previous_code=last_code,
+                lint_errors="\n".join(f"- {e}" for e in last_lint),
+            )
+            raw = llm.complete(retry_prompt, system=system_prompt)
+        else:
+            retry_prompt = RETRY_USER.format(
+                previous_code=last_code,
+                error_tail=last_err,
+            )
+            raw = llm.complete(retry_prompt, system=system_prompt)
+
+        code = _strip_code_fences(raw)
+        last_code = code
+        code_file.write_text(code, encoding="utf-8")
+
+        # Static lint pass first — cheap and catches the obvious bugs.
+        lint_errors = lint_manim_code(code)
+        if lint_errors:
+            last_lint = lint_errors
+            last_err = "Lint failed:\n" + "\n".join(lint_errors)
+            continue
+        last_lint = []
+
+        returncode, err_tail, rendered = _run_manim(code_file, media_dir, quality=quality)
+        if returncode == 0 and rendered is not None:
+            final = out_dir / f"scene_{scene.id:03d}.mp4"
+            shutil.copy2(rendered, final)
+            return final
+        last_err = err_tail
+
+    raise ManimRenderError(
+        message=f"Manim render failed for scene {scene.id} after {max_retries + 1} attempts",
+        stderr=last_err,
+        last_code=last_code,
+    )

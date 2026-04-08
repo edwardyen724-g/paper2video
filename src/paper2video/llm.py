@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import time
 from typing import Protocol
 
 
@@ -36,6 +37,7 @@ class AnthropicClient:
         self.model = model or os.environ.get("PAPER2VIDEO_MODEL", "claude-sonnet-4-6")
 
     def complete(self, prompt: str, system: str | None = None) -> str:
+        import anthropic  # lazy
         kwargs = {
             "model": self.model,
             "max_tokens": 4096,
@@ -43,8 +45,30 @@ class AnthropicClient:
         }
         if system:
             kwargs["system"] = system
-        msg = self._client.messages.create(**kwargs)
-        return msg.content[0].text
+        # Retry transient errors (connection, timeout, 5xx, 529 overloaded).
+        # Capped backoff so we don't burn 20 minutes on a single scene.
+        retryable = (
+            anthropic.APIConnectionError,
+            anthropic.APITimeoutError,
+            anthropic.InternalServerError,
+        )
+        backoff_schedule = [3, 8, 20, 45, 90]  # ~166s total, then raise
+        last_exc: Exception | None = None
+        for attempt, wait in enumerate([*backoff_schedule, None]):
+            try:
+                msg = self._client.messages.create(**kwargs)
+                return msg.content[0].text
+            except retryable as e:
+                last_exc = e
+            except anthropic.APIStatusError as e:
+                if e.status_code not in (429, 502, 503, 504, 529):
+                    raise
+                last_exc = e
+            if wait is None:
+                break
+            time.sleep(wait)
+        assert last_exc is not None
+        raise last_exc
 
     def complete_json(self, prompt: str, system: str | None = None) -> dict:
         sys_prompt = (system or "") + "\n\nRespond with valid JSON only. No prose, no code fences."
