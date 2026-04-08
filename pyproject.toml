@@ -1,0 +1,34 @@
+[project]
+name = "paper2video"
+version = "0.1.0"
+description = "Open-source pipeline: article/paper -> narrated explainer video"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "trafilatura>=1.12.0",
+    "pymupdf>=1.24.0",
+    "ddgs>=0.9.0",
+    "matplotlib>=3.9.0",
+    "Pillow>=10.4.0",
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.9.0",
+]
+
+[project.optional-dependencies]
+tts = ["kokoro>=0.7.0", "soundfile>=0.12.1"]
+manim = ["manim>=0.18.0"]
+dev = ["pytest>=8.3.0", "pytest-mock>=3.14.0", "ruff>=0.6.0"]
+
+[project.scripts]
+paper2video = "paper2video.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
