@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    load_dotenv()
+    load_dotenv(override=True)
     args = build_parser().parse_args(argv)
 
     from .llm import AnthropicClient
