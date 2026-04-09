@@ -33,6 +33,90 @@ HARD RULES — violating any of these will break the pipeline:
 8. Animations should feel like 3Blue1Brown: smooth transforms, progressive reveals,
    highlights, arrows, diagrams. NOT a static slide with a title and bullets.
 
+=== ENTRANCE-POSITIONING RULE — CRITICAL ===
+
+This is the single most common bug in LLM-written Manim code. READ CAREFULLY.
+
+`FadeIn(obj, shift=vec)` does NOT move the object to some target position. It is purely a
+RELATIVE animation: the object starts at `(current_position - vec)` and ends at
+`(current_position)`. Before the animation runs, wherever `obj` is in the scene graph IS
+where it will be after the fade-in.
+
+WRONG PATTERN — do not do this:
+
+    grid = VGroup(box_a, box_b, box_c, box_d)
+    grid.arrange_in_grid(rows=2, cols=2)
+    grid.move_to(ORIGIN)
+
+    # WRONG: pre-shift each box away, then try to "fly them back" with FadeIn
+    box_a.shift(UP * 2 + LEFT * 2)
+    box_b.shift(UP * 2 + RIGHT * 2)
+    box_c.shift(DOWN * 2 + LEFT * 2)
+    box_d.shift(DOWN * 2 + RIGHT * 2)
+
+    self.play(
+        FadeIn(box_a, shift=DOWN + RIGHT),  # this does NOT undo the pre-shift!
+        FadeIn(box_b, shift=DOWN + LEFT),
+        FadeIn(box_c, shift=UP + RIGHT),
+        FadeIn(box_d, shift=UP + LEFT),
+    )
+    # Result: boxes end up far from the grid center, overlapping the title.
+
+CORRECT PATTERN #1 — leave everything at its final grid position, then reveal:
+
+    grid = VGroup(box_a, box_b, box_c, box_d)
+    grid.arrange_in_grid(rows=2, cols=2, buff=0.6)
+    grid.move_to(ORIGIN)
+
+    # Small shift vectors for flavor — objects still END at grid position
+    self.play(
+        FadeIn(box_a, shift=DOWN * 0.3),
+        FadeIn(box_b, shift=DOWN * 0.3),
+        FadeIn(box_c, shift=DOWN * 0.3),
+        FadeIn(box_d, shift=DOWN * 0.3),
+        lag_ratio=0.1,
+        run_time=1.2,
+    )
+
+CORRECT PATTERN #2 — use .animate.move_to(target) if you want explicit travel:
+
+    grid = VGroup(box_a, box_b, box_c, box_d).arrange_in_grid(rows=2, cols=2, buff=0.6)
+    grid.move_to(ORIGIN)
+    # Capture grid positions BEFORE moving boxes away
+    targets = [b.get_center() for b in grid]
+
+    # Move boxes to start positions (off-screen corners, center, wherever)
+    box_a.move_to(ORIGIN)
+    box_b.move_to(ORIGIN)
+    box_c.move_to(ORIGIN)
+    box_d.move_to(ORIGIN)
+
+    self.play(
+        box_a.animate.move_to(targets[0]),
+        box_b.animate.move_to(targets[1]),
+        box_c.animate.move_to(targets[2]),
+        box_d.animate.move_to(targets[3]),
+        run_time=1.0,
+    )
+
+CORRECT PATTERN #3 — simplest of all, just use GrowFromCenter / GrowFromPoint:
+
+    self.play(
+        GrowFromCenter(box_a),
+        GrowFromCenter(box_b),
+        GrowFromCenter(box_c),
+        GrowFromCenter(box_d),
+        lag_ratio=0.1,
+        run_time=1.2,
+    )
+
+THE RULE: after you arrange/position objects, DO NOT manually `.shift()` them away before
+animating them in. If you need the animation to show motion, use pattern #2 (explicit
+animate.move_to) or pattern #3 (Grow). NEVER use FadeIn(shift=vec) to compensate for a
+manual .shift() — those don't cancel.
+
+=== END ENTRANCE-POSITIONING RULE ===
+
 === SCALE RULE — CRITICAL ===
 
 DO NOT use `.scale(factor)` with factor less than 0.5 or greater than 2.0.
@@ -277,16 +361,27 @@ def lint_manim_code(code: str) -> list[str]:
     if "fit(" in code and "def fit(" not in code:
         errors.append("Code calls fit(...) but never defines `def fit(mobj, ...):` inside construct().")
 
-    # 5. Catch arbitrary large shifts that push things off-screen.
+    # 5. Catch arbitrary large shifts applied to initial-state objects.
+    #    Pattern: `.shift(...)` that is NOT inside `.animate.shift(...)`, with any
+    #    magnitude >= 1.5 on any direction. Large initial shifts are almost always
+    #    a "fly in from corner" anti-pattern the LLM can't compensate for later.
     import re
-    shift_pattern = re.compile(r"\.shift\s*\(\s*(?:UP|DOWN|LEFT|RIGHT)\s*\*\s*(\d+(?:\.\d+)?)")
+    shift_call = re.compile(r"(?<!animate)\.shift\s*\(([^)]*)\)")
+    magnitude_token = re.compile(r"(?:UP|DOWN|LEFT|RIGHT|UL|UR|DL|DR)\s*\*\s*(\d+(?:\.\d+)?)")
     for i, line in enumerate(lines, start=1):
-        m = shift_pattern.search(line)
-        if m and float(m.group(1)) > 2.5:
-            errors.append(
-                f"Line {i}: .shift() with magnitude > 2.5 will likely push content off-screen. "
-                f"Use .arrange() or .next_to() instead."
-            )
+        stripped = line.split("#", 1)[0]
+        for call in shift_call.finditer(stripped):
+            args = call.group(1)
+            magnitudes = [float(m.group(1)) for m in magnitude_token.finditer(args)]
+            if magnitudes and max(magnitudes) >= 1.5:
+                errors.append(
+                    f"Line {i}: .shift() with magnitude >= 1.5 on an initial-state object. "
+                    f"This is the 'fly in from corner' anti-pattern — FadeIn(shift=...) will "
+                    f"NOT move the object back to a grid position. Use .animate.move_to(target) "
+                    f"for explicit travel, or leave the object at its final position and use "
+                    f"FadeIn(obj, shift=SMALL_VECTOR) for a subtle reveal."
+                )
+                break
 
     # 6. Must not import anything other than from manim
     for i, line in enumerate(lines, start=1):

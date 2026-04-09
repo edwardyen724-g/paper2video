@@ -82,8 +82,32 @@ def test_lint_catches_huge_shift():
     assert any("shift" in e for e in errors)
 
 
+def test_lint_catches_fly_in_anti_pattern():
+    bad = GOOD_CODE.replace(
+        "self.wait(1)",
+        "title.shift(UP * 2 + LEFT * 2)\n        self.wait(1)",
+    )
+    errors = lint_manim_code(bad)
+    assert any("fly in" in e.lower() or "shift" in e for e in errors)
+
+
+def test_lint_catches_exact_1_5_shift():
+    bad = GOOD_CODE.replace("self.wait(1)", "title.shift(UP * 1.5)\n        self.wait(1)")
+    errors = lint_manim_code(bad)
+    assert any("shift" in e for e in errors)
+
+
 def test_lint_allows_small_shift():
     ok = GOOD_CODE.replace("self.wait(1)", "title.shift(UP * 0.3)\n        self.wait(1)")
+    assert lint_manim_code(ok) == []
+
+
+def test_lint_allows_animate_shift_large():
+    # .animate.shift() is fine — it's a proper animation to a new position
+    ok = GOOD_CODE.replace(
+        "self.play(Write(title))",
+        "self.play(title.animate.shift(UP * 3))"
+    )
     assert lint_manim_code(ok) == []
 
 
