@@ -135,6 +135,35 @@ class MainScene(Scene):
     assert lint_manim_code(code) == []
 
 
+def test_lint_catches_tiny_scale():
+    bad = GOOD_CODE.replace("self.play(Write(title))", "title.scale(0.1)\n        self.play(Write(title))")
+    errors = lint_manim_code(bad)
+    assert any("scale" in e and "0.1" in e for e in errors)
+
+
+def test_lint_catches_huge_scale():
+    bad = GOOD_CODE.replace("self.play(Write(title))", "title.scale(10)\n        self.play(Write(title))")
+    errors = lint_manim_code(bad)
+    assert any("scale" in e and "10" in e for e in errors)
+
+
+def test_lint_catches_animate_scale_tiny():
+    bad = GOOD_CODE.replace(
+        "self.play(Write(title))",
+        "self.play(title.animate.scale(0.2))"
+    )
+    errors = lint_manim_code(bad)
+    assert any("scale" in e for e in errors)
+
+
+def test_lint_allows_small_scale_adjustments():
+    ok = GOOD_CODE.replace(
+        "self.play(Write(title))",
+        "title.scale(1.1)\n        self.play(Write(title))"
+    )
+    assert lint_manim_code(ok) == []
+
+
 def test_lint_catches_uncreate_at_end():
     bad = GOOD_CODE.replace(
         "self.wait(1)",

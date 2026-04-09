@@ -33,6 +33,35 @@ HARD RULES — violating any of these will break the pipeline:
 8. Animations should feel like 3Blue1Brown: smooth transforms, progressive reveals,
    highlights, arrows, diagrams. NOT a static slide with a title and bullets.
 
+=== SCALE RULE — CRITICAL ===
+
+DO NOT use `.scale(factor)` with factor less than 0.5 or greater than 2.0.
+DO NOT use `.animate.scale(factor)` with factor less than 0.5 or greater than 2.0.
+
+Why: compounding scale calls across animation steps produces sizing bugs that make text
+unreadable. E.g., calling `.scale(0.1)` then `.animate.scale(10)` does NOT return the
+object to its original size — it leaves it at 10% of the original. Small scale factors
+also compound when applied to VGroups containing text, making labels become invisible pt
+sizes like 2.4pt.
+
+INSTEAD, use these patterns for entrances and exits:
+
+- Entrance (fade in):                  self.play(FadeIn(obj), run_time=1)
+- Entrance (slide in from left):       self.play(FadeIn(obj, shift=RIGHT * 1.5), run_time=1)
+- Entrance (drop from above):          self.play(FadeIn(obj, shift=DOWN * 1.5), run_time=1)
+- Entrance (grow from center):         self.play(GrowFromCenter(obj), run_time=1)
+- Emphasis (small pulse):              self.play(Indicate(obj, scale_factor=1.1), run_time=0.8)
+- Emphasis (flash color):              self.play(Flash(obj, color=YELLOW), run_time=0.5)
+- Exit (mid-scene cleanup):            self.play(FadeOut(obj), run_time=0.6)
+- Transform one thing to another:      self.play(ReplacementTransform(a, b), run_time=1)
+
+The only ACCEPTABLE use of .scale() is a tiny polish like .scale(1.1) or .scale(0.9) for
+a subtle emphasis, NEVER for building an entrance/exit animation.
+
+Do NOT compose .scale() with .animate.scale() expecting them to cancel out. They don't.
+
+=== END SCALE RULE ===
+
 === ENDING RULE — CRITICAL ===
 
 NEVER end the scene with FadeOut, Uncreate, Unwrite, or any disappearance animation.
@@ -266,7 +295,22 @@ def lint_manim_code(code: str) -> list[str]:
             if not (s.startswith("from manim") or s == "from manim import *"):
                 errors.append(f"Line {i}: forbidden import. Only `from manim import *` is allowed.")
 
-    # 7. Last animation must not be a disappearance — pipeline freezes last frame.
+    # 7a. No dangerous .scale(factor) calls — causes unreadable text from compounding.
+    scale_pattern = re.compile(r"\.(?:animate\.)?scale\s*\(\s*(-?\d+(?:\.\d+)?)\s*[,)]")
+    for i, line in enumerate(lines, start=1):
+        stripped = line.split("#", 1)[0]
+        for m in scale_pattern.finditer(stripped):
+            factor = float(m.group(1))
+            if factor < 0.5 or factor > 2.0:
+                errors.append(
+                    f"Line {i}: .scale({factor}) outside the allowed range [0.5, 2.0]. "
+                    f"Compounding scales produce unreadable text. Use FadeIn(shift=...), "
+                    f"GrowFromCenter(), or ReplacementTransform() for entrances/exits "
+                    f"instead of shrink-and-grow tricks."
+                )
+                break
+
+    # 7b. Last animation must not be a disappearance — pipeline freezes last frame.
     #    Find all self.play(...) calls and check that the LAST one doesn't fade things out.
     play_indices = [i for i, line in enumerate(lines) if "self.play(" in line]
     if play_indices:
