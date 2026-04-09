@@ -1,5 +1,9 @@
 # paper2video
 
+[![ci](https://github.com/edwardyen724-g/paper2video/actions/workflows/ci.yml/badge.svg)](https://github.com/edwardyen724-g/paper2video/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](pyproject.toml)
+
 **Turn any technical article or paper into a 2–5 minute narrated explainer video, in a 3Blue1Brown-ish style. Open-source end to end.**
 
 ![demo](examples/demo.gif)
