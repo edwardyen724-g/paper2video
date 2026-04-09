@@ -2,6 +2,10 @@
 
 **Turn any technical article or paper into a 2–5 minute narrated explainer video, in a 3Blue1Brown-ish style. Open-source end to end.**
 
+![demo](examples/demo.gif)
+
+*Full sample: [`examples/karpathy_llm_wiki.mp4`](examples/karpathy_llm_wiki.mp4) — a 3-minute explainer of Andrej Karpathy's [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), generated end-to-end by paper2video in under 5 minutes of wall-clock time and ~$0.05 of Claude API credit.*
+
 ```
 URL or PDF  →  ingest  →  research  →  script  →  Manim render  →  Kokoro TTS  →  ffmpeg mux  →  video.mp4
 ```
