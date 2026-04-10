@@ -1,0 +1,14 @@
+gradio>=5.0.0
+anthropic>=0.40.0
+trafilatura>=1.12.0
+pymupdf>=1.24.0
+ddgs>=0.9.0
+matplotlib>=3.9.0
+Pillow>=10.4.0
+python-dotenv>=1.0.1
+pydantic>=2.9.0
+imageio-ffmpeg>=0.5.1
+manim>=0.18.0
+kokoro>=0.7.0
+soundfile>=0.12.1
+paper2video @ git+https://github.com/edwardyen724-g/paper2video.git
