@@ -61,10 +61,8 @@ def _render_scene_visual(
     if cfg.use_manim:
         try:
             manim_dir = run_dir / "manim"
-            # Pass resolution for portrait-aware rendering
-            res = None
-            if hasattr(cfg, 'width') and hasattr(cfg, 'height') and cfg.height > cfg.width:
-                res = (cfg.width, cfg.height)
+            # Always render Manim at landscape. For portrait social videos,
+            # the social pipeline reframes the output to 9:16 after render.
             mp4 = render_manim_scene(
                 scene=scene,
                 duration_sec=duration_sec,
@@ -72,7 +70,7 @@ def _render_scene_visual(
                 llm=llm,
                 quality=cfg.manim_quality,
                 max_retries=cfg.manim_max_retries,
-                resolution=res,
+                resolution=None,
             )
             _log(run_dir, f"  scene {scene.id}: manim OK -> {mp4.name}")
             return mp4, "video"

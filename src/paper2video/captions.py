@@ -78,11 +78,14 @@ def burn_subtitles(
     captions_filter = str(captions_path.resolve()).replace("\\", "/").replace(":", "\\:")
 
     if portrait:
-        # Portrait (1080x1920): small font, near bottom, no overlap with animation
+        # Portrait (1080x1920) with reframed layout:
+        # Top 200px = title, middle 1080px = animation, bottom 640px = subtitle zone
+        # MarginV=200 pushes text 200px up from bottom edge → well inside the 640px zone
+        # FontSize=16 is readable on phone without overlapping animation
         style = (
-            "FontName=Arial,FontSize=12,PrimaryColour=&H00FFFFFF,"
+            "FontName=Arial,FontSize=16,PrimaryColour=&H00FFFFFF,"
             "OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,"
-            "Alignment=2,MarginV=80,MarginL=40,MarginR=40"
+            "Alignment=2,MarginV=200,MarginL=60,MarginR=60"
         )
     else:
         # Landscape (1920x1080): original style

@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .assemble import build_scene_clip_from_image, concat_clips, mux_scene_clip
+from .assemble import build_scene_clip_from_image, concat_clips, mux_scene_clip, reframe_for_portrait
 from .captions import burn_subtitles, write_srt
 from .ingest import IngestedDoc, extract_from_url
 from .llm import LLMClient
@@ -115,10 +115,24 @@ def _render_social_video(
             )
         )
 
+    is_portrait = cfg.height > cfg.width
     clip_paths: list[Path] = []
     for scene, audio, (visual_path, kind) in zip(script_doc.scenes, scene_audios, visual_tracks):
         clip_out = work_dir / f"scene_{scene.id:03d}.mp4"
-        if kind == "video":
+        if is_portrait and kind == "video":
+            # Portrait social: reframe landscape Manim into 9:16 with title zone
+            scene_title = (scene.visual_spec or {}).get("title", "")
+            reframe_for_portrait(
+                video_path=visual_path,
+                audio_path=audio.audio_path,
+                duration_sec=audio.duration_sec,
+                out_path=clip_out,
+                title_text=scene_title,
+                portrait_w=cfg.width,
+                portrait_h=cfg.height,
+                fps=cfg.fps,
+            )
+        elif kind == "video":
             mux_scene_clip(
                 video_path=visual_path,
                 audio_path=audio.audio_path,

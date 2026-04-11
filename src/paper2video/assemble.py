@@ -79,6 +79,106 @@ def build_scene_clip_from_image(
     return out_path
 
 
+def reframe_for_portrait(
+    video_path: Path,
+    audio_path: Path,
+    duration_sec: float,
+    out_path: Path,
+    title_text: str = "",
+    portrait_w: int = 1080,
+    portrait_h: int = 1920,
+    fps: int = 30,
+) -> Path:
+    """Reframe a landscape/square Manim clip into a portrait (9:16) video.
+
+    Layout:
+      - Top zone (~200px): title text on dark background
+      - Middle zone (1080x1080): the Manim animation, scaled to fill
+      - Bottom zone (~640px): reserved for subtitles (added later by burn_subtitles)
+      - Audio muxed in
+
+    The Manim clip is center-cropped/scaled to fill the middle 1080x1080 square.
+    """
+    ffmpeg = _ffmpeg()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    top_h = 200
+    mid_h = 1080
+    bot_h = portrait_h - top_h - mid_h  # 640 for 1920 total
+
+    # Build the filter:
+    # 1. Scale the manim video to fit 1080 wide, then crop to 1080x1080 from center
+    # 2. Create a black canvas at portrait_w x portrait_h
+    # 3. Overlay the cropped manim at y=top_h
+    # 4. Draw title text in the top zone
+    title_escaped = title_text.replace("'", "\u2019").replace(":", " -").replace("\\", "")
+    title_filter = ""
+    if title_text:
+        title_filter = (
+            f",drawtext=text='{title_escaped}'"
+            f":fontsize=42:fontcolor=white"
+            f":x=(w-text_w)/2:y=({top_h}-text_h)/2"
+            f":font=Arial"
+        )
+
+    # Scale manim to fill portrait_w wide, then pad to mid_h tall (centered, black padding)
+    vf = (
+        f"[0:v]scale={portrait_w}:-1,pad={portrait_w}:{mid_h}:(ow-iw)/2:(oh-ih)/2:black[manim];"
+        f"color=black:s={portrait_w}x{portrait_h}:d={duration_sec:.3f}:r={fps}[bg];"
+        f"[bg][manim]overlay=0:{top_h}:shortest=1{title_filter}"
+    )
+
+    # Two-pass approach: first reframe video, then mux audio
+    # This avoids complex filter_complex + multi-input mapping issues
+    reframed_tmp = out_path.parent / f"{out_path.stem}_reframed.mp4"
+
+    # Step 1: reframe video (no audio)
+    cmd_video = [
+        ffmpeg, "-y",
+        "-i", str(video_path),
+        "-filter_complex", vf,
+        "-an",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-t", f"{duration_sec:.3f}",
+        str(reframed_tmp),
+    ]
+    res = subprocess.run(cmd_video, capture_output=True, text=True)
+    if res.returncode != 0:
+        # Fallback without drawtext (font might not be available)
+        vf_simple = (
+            f"[0:v]scale={portrait_w}:-1,pad={portrait_w}:{mid_h}:(ow-iw)/2:(oh-ih)/2:black[manim];"
+            f"color=black:s={portrait_w}x{portrait_h}:d={duration_sec:.3f}:r={fps}[bg];"
+            f"[bg][manim]overlay=0:{top_h}:shortest=1"
+        )
+        cmd_video_simple = [
+            ffmpeg, "-y",
+            "-i", str(video_path),
+            "-filter_complex", vf_simple,
+            "-an",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-t", f"{duration_sec:.3f}",
+            str(reframed_tmp),
+        ]
+        subprocess.run(cmd_video_simple, check=True, capture_output=True)
+
+    # Step 2: mux reframed video + audio
+    cmd_mux = [
+        ffmpeg, "-y",
+        "-i", str(reframed_tmp),
+        "-i", str(audio_path),
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+        "-t", f"{duration_sec:.3f}",
+        "-shortest",
+        str(out_path),
+    ]
+    subprocess.run(cmd_mux, check=True, capture_output=True)
+
+    # Cleanup
+    reframed_tmp.unlink(missing_ok=True)
+    return out_path
+
+
 def mux_scene_clip(
     video_path: Path,
     audio_path: Path,
