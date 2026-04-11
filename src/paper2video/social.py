@@ -143,7 +143,8 @@ def _render_social_video(
     concat_clips(clip_paths, master_video, work_dir)
     durations = [audio.duration_sec for audio in scene_audios]
     captions_path = write_srt(run_dir / "captions.srt", script_doc.scenes, durations)
-    review_video = burn_subtitles(master_video, captions_path, run_dir / "review.mp4") if cfg.captions_enabled else master_video
+    is_portrait = cfg.height > cfg.width
+    review_video = burn_subtitles(master_video, captions_path, run_dir / "review.mp4", portrait=is_portrait) if cfg.captions_enabled else master_video
 
     validation_errors = validate_vertical_assets(
         script=script_doc,

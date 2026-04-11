@@ -15,19 +15,46 @@ def format_srt_timestamp(total_seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
+def _split_narration(text: str, max_words: int = 10) -> list[str]:
+    """Split a narration string into short chunks suitable for subtitles.
+
+    Each chunk is at most `max_words` words, splitting on sentence boundaries
+    first, then on word count within sentences.
+    """
+    import re
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    chunks: list[str] = []
+    for sentence in sentences:
+        words = sentence.split()
+        while words:
+            chunk = words[:max_words]
+            words = words[max_words:]
+            chunks.append(" ".join(chunk))
+    return [c for c in chunks if c.strip()]
+
+
 def build_srt(scenes: list[Scene], durations: list[float]) -> str:
     lines: list[str] = []
+    index = 1
     start = 0.0
-    for index, (scene, duration) in enumerate(zip(scenes, durations), start=1):
+    for scene, duration in zip(scenes, durations):
         end = start + duration
-        lines.extend(
-            [
-                str(index),
-                f"{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}",
-                scene.narration.strip(),
-                "",
-            ]
-        )
+        chunks = _split_narration(scene.narration.strip())
+        if not chunks:
+            chunks = [scene.narration.strip()]
+        chunk_duration = duration / len(chunks)
+        for chunk in chunks:
+            chunk_end = min(start + chunk_duration, end)
+            lines.extend(
+                [
+                    str(index),
+                    f"{format_srt_timestamp(start)} --> {format_srt_timestamp(chunk_end)}",
+                    chunk,
+                    "",
+                ]
+            )
+            index += 1
+            start = chunk_end
         start = end
     return "\n".join(lines).strip() + "\n"
 
@@ -39,18 +66,39 @@ def write_srt(path: Path, scenes: list[Scene], durations: list[float]) -> Path:
     return path
 
 
-def burn_subtitles(video_path: Path, captions_path: Path, out_path: Path) -> Path:
+def burn_subtitles(
+    video_path: Path,
+    captions_path: Path,
+    out_path: Path,
+    portrait: bool = False,
+) -> Path:
     ffmpeg = _ffmpeg()
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     captions_filter = str(captions_path.resolve()).replace("\\", "/").replace(":", "\\:")
+
+    if portrait:
+        # Portrait (1080x1920): small font, near bottom, no overlap with animation
+        style = (
+            "FontName=Arial,FontSize=12,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,"
+            "Alignment=2,MarginV=80,MarginL=40,MarginR=40"
+        )
+    else:
+        # Landscape (1920x1080): original style
+        style = (
+            "FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,"
+            "Alignment=2,MarginV=120"
+        )
+
     cmd = [
         ffmpeg,
         "-y",
         "-i",
         str(video_path),
         "-vf",
-        f"subtitles='{captions_filter}':force_style='FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=120'",
+        f"subtitles='{captions_filter}':force_style='{style}'",
         "-c:a",
         "copy",
         str(out_path),
