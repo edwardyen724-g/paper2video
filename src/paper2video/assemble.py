@@ -67,7 +67,7 @@ def build_scene_clip_from_image(
         "-loop", "1", "-i", str(image_path),
         "-i", str(audio_path),
         "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
         "-r", str(fps),
         "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
@@ -112,7 +112,7 @@ def mux_scene_clip(
         "-map", "[v]",
         "-map", "1:a",
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
         "-t", f"{duration_sec:.3f}",
         str(out_path),
     ]

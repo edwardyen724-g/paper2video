@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 import urllib.request
 
@@ -11,8 +12,53 @@ class IngestedDoc:
     source_url: str
 
 
+class _SimpleArticleParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self._skip_stack: list[str] = []
+        self._text_parts: list[str] = []
+        self.title = ""
+        self._in_title = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag in {"nav", "footer", "script", "style"}:
+            self._skip_stack.append(tag)
+        elif tag == "title":
+            self._in_title = True
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if self._skip_stack and self._skip_stack[-1] == tag:
+            self._skip_stack.pop()
+        if tag == "title":
+            self._in_title = False
+
+    def handle_data(self, data: str) -> None:
+        text = data.strip()
+        if not text:
+            return
+        if self._in_title and not self.title:
+            self.title = text
+        if not self._skip_stack:
+            self._text_parts.append(text)
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self._text_parts)
+
+
+def _fallback_extract_from_html(html: str, source_url: str = "") -> IngestedDoc:
+    parser = _SimpleArticleParser()
+    parser.feed(html)
+    return IngestedDoc(text=parser.text.strip(), title=parser.title, source_url=source_url)
+
+
 def extract_from_html(html: str, source_url: str = "") -> IngestedDoc:
-    import trafilatura
+    try:
+        import trafilatura
+    except ImportError:
+        return _fallback_extract_from_html(html, source_url=source_url)
     text = trafilatura.extract(html, include_comments=False, include_tables=True) or ""
     meta = trafilatura.extract_metadata(html)
     title = meta.title if meta and meta.title else ""

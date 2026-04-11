@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from .llm import LLMClient
 from .research import ResearchResult
 from .types import Scene, ScriptDoc
@@ -59,6 +60,89 @@ Examples of BAD directions (DO NOT DO THIS):
 - "Show the title and three bullet points"
 - "Display a slide with the key concepts"
 - "Animate the text appearing"
+""" 
+
+SOCIAL_SCRIPT_PROMPT = """You are writing a 45-60 second vertical social video about a technical article.
+Audience: curious builders scrolling TikTok, Instagram Reels, or Xiaohongshu.
+
+Your job is to explain the article FAST and CLEARLY:
+- Hook the viewer in the first scene.
+- Explain only the 2-4 most important ideas.
+- End with why it matters.
+- Prefer simple, visual scenes over dense detail.
+
+INPUT ARTICLE:
+{source_text}
+
+KEY POINTS:
+{key_points}
+
+RESEARCH NOTES:
+{notes}
+
+Produce JSON only with this exact shape:
+{{
+  "title": "short punchy title",
+  "summary": "one-sentence summary",
+  "scenes": [
+    {{
+      "id": 1,
+      "narration": "spoken line for this scene, 1-2 sentences",
+      "visual_type": "manim",
+      "visual_spec": {{
+        "title": "short on-screen title",
+        "direction": "clear visual blocking for the animation",
+        "elements": ["short list", "of objects"],
+        "caption": "optional short callout"
+      }},
+      "duration_hint_sec": 8.0
+    }}
+  ]
+}}
+
+Rules:
+- 4 to 6 scenes total.
+- Total spoken length should fit roughly 45-60 seconds.
+- Scene 1 must be a hook.
+- Last scene must answer why this matters.
+- Keep narration in plain English.
+- Output JSON only.
+"""
+
+SOCIAL_REVISION_PROMPT = """You are revising an existing short-form social video script.
+
+REVISION INSTRUCTION:
+{instruction}
+
+CURRENT SCRIPT:
+{script_json}
+
+Return JSON only with this exact shape:
+{{
+  "title": "updated title",
+  "summary": "updated summary",
+  "changed_scene_ids": [1, 3],
+  "scenes": [
+    {{
+      "id": 1,
+      "narration": "updated narration",
+      "visual_type": "manim",
+      "visual_spec": {{
+        "title": "short title",
+        "direction": "visual direction",
+        "elements": ["a", "b"],
+        "caption": "optional"
+      }},
+      "duration_hint_sec": 8.0
+    }}
+  ]
+}}
+
+Rules:
+- Keep unchanged scenes semantically consistent.
+- Prefer targeted edits to the hook, pacing, clarity, or layout.
+- Output the full updated script, plus changed_scene_ids.
+- Output JSON only.
 """
 
 
@@ -90,4 +174,58 @@ def write_script(research_result: ResearchResult, llm: LLMClient) -> ScriptDoc:
         title=raw.get("title", "Untitled"),
         summary=raw.get("summary", ""),
         scenes=scenes,
+    )
+
+
+def write_social_script(research_result: ResearchResult, llm: LLMClient) -> ScriptDoc:
+    notes_str = "\n".join(f"- {n.claim}" for n in research_result.notes) or "(none)"
+    key_points_str = "\n".join(f"- {p}" for p in research_result.key_points[:4]) or "(none)"
+    raw = llm.complete_json(
+        SOCIAL_SCRIPT_PROMPT.format(
+            source_text=research_result.source_text[:10000],
+            key_points=key_points_str,
+            notes=notes_str,
+        )
+    )
+    scenes = [
+        Scene(
+            id=s.get("id") or i,
+            narration=s["narration"],
+            visual_type=s.get("visual_type", "manim"),
+            visual_spec=s.get("visual_spec", {}),
+            duration_hint_sec=float(s.get("duration_hint_sec", 8.0)),
+        )
+        for i, s in enumerate(raw.get("scenes", []), start=1)
+    ]
+    return ScriptDoc(
+        title=raw.get("title", "Untitled"),
+        summary=raw.get("summary", ""),
+        scenes=scenes,
+    )
+
+
+def revise_social_script(script_doc: ScriptDoc, instruction: str, llm: LLMClient) -> tuple[ScriptDoc, list[int]]:
+    raw = llm.complete_json(
+        SOCIAL_REVISION_PROMPT.format(
+            instruction=instruction.strip(),
+            script_json=json.dumps(script_doc.model_dump(), ensure_ascii=False, indent=2),
+        )
+    )
+    scenes = [
+        Scene(
+            id=s.get("id") or i,
+            narration=s["narration"],
+            visual_type=s.get("visual_type", "manim"),
+            visual_spec=s.get("visual_spec", {}),
+            duration_hint_sec=float(s.get("duration_hint_sec", 8.0)),
+        )
+        for i, s in enumerate(raw.get("scenes", []), start=1)
+    ]
+    return (
+        ScriptDoc(
+            title=raw.get("title", script_doc.title),
+            summary=raw.get("summary", script_doc.summary),
+            scenes=scenes,
+        ),
+        [int(scene_id) for scene_id in raw.get("changed_scene_ids", [])],
     )

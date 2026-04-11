@@ -271,6 +271,24 @@ font_size, the diagram is grouped + arranged + fit + moved to ORIGIN. NO arbitra
 Your output MUST follow this structure.
 """
 
+PORTRAIT_ADDENDUM = """
+
+=== PORTRAIT MODE (9:16 VERTICAL VIDEO) ===
+
+This scene will be rendered at 1080x1920 (portrait / vertical), NOT landscape.
+Manim's frame is still 14.22 x 8.0 units, but the RENDER will stretch it to 9:16.
+This means:
+- Horizontal space is VERY limited. Keep everything narrow (max_w=7.0 in fit()).
+- Vertical space is generous. Stack elements vertically with .arrange(DOWN, buff=0.8).
+- Title should be at font_size=36, body at font_size=24.
+- Use VGroup(...).arrange(DOWN, ...) and fit(group, max_w=7.0, max_h=6.0) for layouts.
+- Avoid placing elements past x=±3.5 — they WILL be cut off in portrait render.
+- The frame center is still ORIGIN. Think of a tall, narrow column of content.
+- Prefer fewer, larger elements stacked vertically over wide horizontal layouts.
+
+=== END PORTRAIT MODE ===
+"""
+
 CODEGEN_USER = """Generate a Manim scene for scene {scene_id} of an explainer video.
 
 NARRATION (this is what the viewer hears — your animation must illustrate it):
@@ -445,7 +463,12 @@ def _strip_code_fences(raw: str) -> str:
     return raw.strip()
 
 
-def _run_manim(code_file: Path, out_media_dir: Path, quality: str = "l") -> tuple[int, str, Path | None]:
+def _run_manim(
+    code_file: Path,
+    out_media_dir: Path,
+    quality: str = "l",
+    resolution: tuple[int, int] | None = None,
+) -> tuple[int, str, Path | None]:
     """Invoke the manim CLI. Returns (returncode, stderr_tail, rendered_mp4_or_None)."""
     # Quality flags: -ql=low 480p15, -qm=medium 720p30, -qh=high 1080p60
     cmd = [
@@ -454,18 +477,45 @@ def _run_manim(code_file: Path, out_media_dir: Path, quality: str = "l") -> tupl
         "--disable_caching",
         "--media_dir", str(out_media_dir),
         "--output_file", "MainScene",
-        str(code_file), "MainScene",
     ]
+    if resolution:
+        cmd.extend(["--resolution", f"{resolution[0]},{resolution[1]}"])
+    cmd.extend([str(code_file), "MainScene"])
     proc = subprocess.run(cmd, capture_output=True, text=True)
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
     tail = "\n".join(combined.strip().splitlines()[-60:])
 
     # Find the rendered MP4 — Manim writes to:
     #   <media_dir>/videos/<script_stem>/<quality_dir>/MainScene.mp4
+    # The quality_dir naming depends on the flags:
+    #   -ql → 480p15, -qm → 720p30, -qh → 1080p60, -qk → 2160p60
+    #   --resolution W,H → uses Hp{fps} format, e.g. --resolution 1080,1920 → "1920p30"
     quality_dirs = {"l": "480p15", "m": "720p30", "h": "1080p60", "k": "2160p60"}
-    qdir = quality_dirs.get(quality, "480p15")
-    rendered = out_media_dir / "videos" / code_file.stem / qdir / "MainScene.mp4"
-    if proc.returncode == 0 and rendered.exists():
+    videos_dir = out_media_dir / "videos" / code_file.stem
+
+    # Build a prioritized list of possible directory names
+    candidate_dirs = []
+    if resolution:
+        # Manim names it "{height}p{fps}" for custom resolution
+        fps_guess = 30 if quality in ("m", "h") else 15 if quality == "l" else 60
+        candidate_dirs.append(f"{resolution[1]}p{fps_guess}")
+        candidate_dirs.append(f"{resolution[0]}x{resolution[1]}")
+    candidate_dirs.append(quality_dirs.get(quality, "480p15"))
+
+    rendered = None
+    for qdir in candidate_dirs:
+        p = videos_dir / qdir / "MainScene.mp4"
+        if p.exists():
+            rendered = p
+            break
+
+    # Last resort: glob for any MainScene.mp4 under the videos dir
+    if rendered is None and proc.returncode == 0:
+        hits = list(videos_dir.glob("*/MainScene.mp4"))
+        if hits:
+            rendered = hits[0]
+
+    if proc.returncode == 0 and rendered is not None:
         return 0, tail, rendered
     return proc.returncode or 1, tail, None
 
@@ -495,8 +545,14 @@ def render_manim_scene(
     llm: LLMClient,
     quality: str = "m",
     max_retries: int = 3,
+    resolution: tuple[int, int] | None = None,
 ) -> Path:
     """Generate and render a Manim scene, retrying on failure.
+
+    Args:
+        resolution: Optional (width, height) in pixels. If portrait (e.g. 1080x1920),
+            the system prompt is adapted for vertical layout and manim is invoked
+            with --resolution.
 
     Returns the path to the rendered silent MP4.
     Raises ManimRenderError after all retries exhausted.
@@ -515,6 +571,8 @@ def render_manim_scene(
     code_file = scene_work / f"scene_{scene.id:03d}.py"
     media_dir = scene_work / "media"
 
+    is_portrait = resolution and resolution[1] > resolution[0]
+
     visual_direction = _compose_visual_direction(scene.visual_spec or {})
     user_prompt = CODEGEN_USER.format(
         scene_id=scene.id,
@@ -523,6 +581,8 @@ def render_manim_scene(
         duration=duration_sec,
     )
     system_prompt = CODEGEN_SYSTEM.format(duration=duration_sec)
+    if is_portrait:
+        system_prompt += PORTRAIT_ADDENDUM
 
     last_code = ""
     last_err = ""
@@ -555,7 +615,7 @@ def render_manim_scene(
             continue
         last_lint = []
 
-        returncode, err_tail, rendered = _run_manim(code_file, media_dir, quality=quality)
+        returncode, err_tail, rendered = _run_manim(code_file, media_dir, quality=quality, resolution=resolution)
         if returncode == 0 and rendered is not None:
             final = out_dir / f"scene_{scene.id:03d}.mp4"
             shutil.copy2(rendered, final)
