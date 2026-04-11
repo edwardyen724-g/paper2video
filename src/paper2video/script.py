@@ -68,10 +68,26 @@ Audience: curious builders who are scrolling FAST. You have 6 seconds to hook th
 
 === PACING RULES (backed by platform retention data) ===
 
-1. HOOK IN 6 SECONDS. Scene 1 must be a provocative question, a surprising claim, or a
-   "wait, what?" moment. NOT "Today we'll look at..." or "Let me explain...".
-   Good hooks: "What if your AI agent thinks it's doing great... but it's actually terrible?"
-   Bad hooks: "In this video we explore the concept of..."
+1. HOOK IN 6 SECONDS. Scene 1 must stop the scroll instantly. Pick ONE of these proven
+   hook formulas and adapt it to the article's main insight:
+
+   FORMULA A — Contrarian claim: "[Everyone thinks X]... but actually [surprising opposite]."
+     Example: "Everyone says RAG is the future of AI memory... but it forgets everything between questions."
+
+   FORMULA B — Shocking stat or specific number: "[Specific number] that changes everything."
+     Example: "80% of AI-generated code passes its own tests — and fails in production."
+
+   FORMULA C — "What if" scenario: "What if [familiar thing] was actually [reframe]?"
+     Example: "What if your AI agent grades its own homework... and always gives itself an A?"
+
+   FORMULA D — Direct challenge: "You're doing [common thing] wrong. Here's why."
+     Example: "You're building AI agents wrong. Here's what Anthropic figured out."
+
+   FORMULA E — Pattern interrupt: Start mid-thought, as if the viewer walked into a conversation.
+     Example: "...so the agent just quit. Halfway through. Said it was done. It wasn't."
+
+   NEVER start with: "In this video", "Today we'll explore", "Let me explain", "Have you ever wondered".
+   The hook must feel like a CLAIM, not an introduction.
 
 2. EVERY SCENE IS 8-12 SECONDS. No scene longer than 12 seconds. Viewers drop off after 8s
    of the same visual. If you need more time for an idea, split it into two scenes.

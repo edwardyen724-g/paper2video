@@ -15,21 +15,28 @@ def format_srt_timestamp(total_seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
-def _split_narration(text: str, max_words: int = 10) -> list[str]:
+def _split_narration(text: str, max_words: int = 6) -> list[str]:
     """Split a narration string into short chunks suitable for subtitles.
 
     Each chunk is at most `max_words` words, splitting on sentence boundaries
-    first, then on word count within sentences.
+    first, then on natural pause points (commas, dashes, semicolons),
+    then on word count.
+
+    Shorter chunks (6 words default) keep subtitle changes frequent and
+    reduce visible timing drift vs the audio.
     """
     import re
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     chunks: list[str] = []
     for sentence in sentences:
-        words = sentence.split()
-        while words:
-            chunk = words[:max_words]
-            words = words[max_words:]
-            chunks.append(" ".join(chunk))
+        # Try splitting on natural pauses first
+        parts = re.split(r'(?<=[,;—–])\s+', sentence)
+        for part in parts:
+            words = part.split()
+            while words:
+                chunk = words[:max_words]
+                words = words[max_words:]
+                chunks.append(" ".join(chunk))
     return [c for c in chunks if c.strip()]
 
 
@@ -83,9 +90,9 @@ def burn_subtitles(
         # proportionally, placing subtitles in the wrong position.
         style = (
             "PlayResX=1080,PlayResY=1920,"
-            "FontName=Arial,FontSize=38,PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,"
-            "Alignment=2,MarginV=150,MarginL=80,MarginR=80"
+            "FontName=Arial,FontSize=52,Bold=1,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,"
+            "Alignment=2,MarginV=120,MarginL=60,MarginR=60"
         )
     else:
         style = (
