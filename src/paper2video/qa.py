@@ -171,30 +171,42 @@ def _extract_scene_frames(
     return frames
 
 
-VISUAL_QA_PROMPT = """You are a quality assurance reviewer for auto-generated educational videos.
+VISUAL_QA_PROMPT = """You are a strict quality assurance reviewer for auto-generated educational videos
+that will be published on TikTok/Instagram Reels.
 
 Look at this frame from scene {scene_id} of a {orientation} video ({width}x{height}).
 
 The narration for this scene is:
 "{narration}"
 
-Check for these specific issues:
+Check for these specific issues. Be STRICT — this is going to real viewers:
 
-1. TEXT CUTOFF: Is any text cut off by the edges of the frame? Text running past left/right/top/bottom edges.
-2. TEXT OVERLAP: Are any text labels overlapping each other, making them unreadable?
-3. UNREADABLE TEXT: Is any text too small, too faint, or obscured to read?
-4. EMPTY SCENE: Is the frame mostly empty/black with very little visual content?
-5. LAYOUT: Do elements look properly spaced, or are they crammed together or floating randomly?
+1. EDGE CROPPING (most common bug): Is ANY text or shape cut off by the left, right, top, or
+   bottom edge of the frame? Even partially clipped labels count. Look carefully at elements
+   near any edge. If you can see a shape/text that extends past the visible frame, that's an error.
+
+2. TEXT OVERLAP: Are any text labels overlapping each other or overlapping shapes, making
+   either unreadable?
+
+3. UNREADABLE TEXT: Is any text too small to read on a phone screen? For portrait/social
+   video, text smaller than roughly 3% of frame width is too small.
+
+4. EMPTY SCENE: Is the frame mostly empty/black with less than 20% of the area containing
+   visual content? Social video needs to be visually dense.
+
+5. MISALIGNMENT: Are elements that should be aligned (e.g. a fill bar inside a progress bar
+   frame, labels inside boxes) visibly offset from each other?
 
 Respond with JSON only:
 {{
   "issues": [
-    {{"severity": "error", "category": "visual", "message": "description of the problem"}}
+    {{"severity": "error", "category": "visual", "message": "specific description — name the element and the edge/direction"}}
   ]
 }}
 
 If the frame looks fine, return: {{"issues": []}}
-Only report real, obvious problems. Minor aesthetic preferences are not issues.
+Report REAL problems only. A slightly imperfect font choice is not an issue. A text label
+running off the left edge IS an issue.
 """
 
 

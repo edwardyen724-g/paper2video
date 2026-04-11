@@ -98,9 +98,9 @@ def test_social_draft_review_revision_and_publish_flow(tmp_path, monkeypatch):
     assert len(reviewer.sent_drafts) == 2
 
     results = approve_and_publish(item.source_id, deps=deps)
-    assert {result.platform for result in results} == {"tiktok", "instagram", "xiaohongshu"}
+    assert {result.platform for result in results} == {"tiktok", "instagram", "xiaohongshu", "youtube"}
     assert store.get_item(item.source_id).state == "published"
-    assert len(publisher.published) == 3
+    assert len(publisher.published) == 4
 
 
 def test_skip_item_marks_content_as_skipped(tmp_path):

@@ -10,7 +10,7 @@ from .captions import burn_subtitles, write_srt
 from .ingest import IngestedDoc, extract_from_url
 from .llm import LLMClient
 from .pipeline import _render_scene_visual
-from .publish import Publisher, build_platform_packages
+from .publish import Publisher, PublisherRegistry, build_platform_packages
 from .qa import run_qa, QAResult
 from .research import research
 from .review import ReviewClient, parse_telegram_message
@@ -116,49 +116,88 @@ def _render_social_video(
         )
 
     is_portrait = cfg.height > cfg.width
-    clip_paths: list[Path] = []
-    for scene, audio, (visual_path, kind) in zip(script_doc.scenes, scene_audios, visual_tracks):
+    from .tts import FakeTTS
+    from .llm import FakeLLMClient
+    is_test = isinstance(deps.tts, FakeTTS) or isinstance(deps.llm, FakeLLMClient)
+
+    def _build_scene_clip(scene, audio, visual_path, kind):
         clip_out = work_dir / f"scene_{scene.id:03d}.mp4"
         if is_portrait and kind == "video":
-            # Portrait social: reframe landscape Manim into 9:16 with title zone
             scene_title = (scene.visual_spec or {}).get("title", "")
             reframe_for_portrait(
-                video_path=visual_path,
-                audio_path=audio.audio_path,
-                duration_sec=audio.duration_sec,
-                out_path=clip_out,
-                title_text=scene_title,
-                portrait_w=cfg.width,
-                portrait_h=cfg.height,
-                fps=cfg.fps,
+                video_path=visual_path, audio_path=audio.audio_path,
+                duration_sec=audio.duration_sec, out_path=clip_out,
+                title_text=scene_title, portrait_w=cfg.width,
+                portrait_h=cfg.height, fps=cfg.fps,
             )
         elif kind == "video":
             mux_scene_clip(
-                video_path=visual_path,
-                audio_path=audio.audio_path,
-                duration_sec=audio.duration_sec,
-                out_path=clip_out,
-                width=cfg.width,
-                height=cfg.height,
-                fps=cfg.fps,
+                video_path=visual_path, audio_path=audio.audio_path,
+                duration_sec=audio.duration_sec, out_path=clip_out,
+                width=cfg.width, height=cfg.height, fps=cfg.fps,
             )
         else:
             build_scene_clip_from_image(
-                image_path=visual_path,
-                audio_path=audio.audio_path,
-                duration_sec=audio.duration_sec,
-                out_path=clip_out,
-                width=cfg.width,
-                height=cfg.height,
-                fps=cfg.fps,
+                image_path=visual_path, audio_path=audio.audio_path,
+                duration_sec=audio.duration_sec, out_path=clip_out,
+                width=cfg.width, height=cfg.height, fps=cfg.fps,
             )
-        clip_paths.append(clip_out)
+        return clip_out
 
-    master_video = run_dir / "master.mp4"
-    concat_clips(clip_paths, master_video, work_dir)
+    # Build clips + QA retry loop (max 2 retries for scenes with visual errors)
+    max_qa_retries = 0 if is_test else 2
+    clip_paths: list[Path] = []
+    for scene, audio, (visual_path, kind) in zip(script_doc.scenes, scene_audios, visual_tracks):
+        clip_paths.append(_build_scene_clip(scene, audio, visual_path, kind))
+
+    qa_dir = run_dir / "qa"
+    for qa_attempt in range(max_qa_retries + 1):
+        master_video = run_dir / "master.mp4"
+        concat_clips(clip_paths, master_video, work_dir)
+
+        qa_result = run_qa(
+            video_path=master_video, audio_dir=run_dir / "audio",
+            script=script_doc, expected_w=cfg.width, expected_h=cfg.height,
+            scene_clips=clip_paths if not is_test else None,
+            durations=[a.duration_sec for a in scene_audios] if not is_test else None,
+            llm=deps.llm if not is_test else None,
+            qa_dir=qa_dir / f"attempt_{qa_attempt}",
+            skip_audio_check=is_test, skip_pacing_check=is_test,
+        )
+
+        bad_scene_ids = qa_result.error_scene_ids
+        if not bad_scene_ids or qa_attempt >= max_qa_retries:
+            break
+
+        # Re-render bad scenes: delete cached Manim clips so they regenerate
+        for sid in bad_scene_ids:
+            manim_clip = run_dir / "manim" / f"scene_{sid:03d}.mp4"
+            manim_work = run_dir / "manim" / f"scene_{sid:03d}_work"
+            manim_clip.unlink(missing_ok=True)
+            if manim_work.exists():
+                import shutil
+                shutil.rmtree(manim_work, ignore_errors=True)
+
+        # Re-render and rebuild clips for bad scenes
+        for idx, scene in enumerate(script_doc.scenes):
+            if scene.id not in bad_scene_ids:
+                continue
+            audio = scene_audios[idx]
+            vt = _render_scene_visual(
+                scene=scene, duration_sec=audio.duration_sec,
+                run_dir=run_dir, llm=deps.llm,
+                cfg=type("Cfg", (), {
+                    "use_manim": cfg.use_manim, "manim_quality": "m",
+                    "manim_max_retries": 2, "width": cfg.width,
+                    "height": cfg.height, "fps": cfg.fps,
+                })(),
+            )
+            visual_tracks[idx] = vt
+            clip_paths[idx] = _build_scene_clip(scene, audio, vt[0], vt[1])
+
+    # Final assembly
     durations = [audio.duration_sec for audio in scene_audios]
     captions_path = write_srt(run_dir / "captions.srt", script_doc.scenes, durations)
-    is_portrait = cfg.height > cfg.width
     review_video = burn_subtitles(master_video, captions_path, run_dir / "review.mp4", portrait=is_portrait) if cfg.captions_enabled else master_video
 
     validation_errors = validate_vertical_assets(
@@ -169,26 +208,7 @@ def _render_social_video(
         expected_size=(cfg.width, cfg.height),
     )
 
-    # Automated QA: programmatic checks + visual LLM review
-    qa_dir = run_dir / "qa"
-    from .tts import FakeTTS
-    from .llm import FakeLLMClient
-    is_test = isinstance(deps.tts, FakeTTS) or isinstance(deps.llm, FakeLLMClient)
-    qa_result = run_qa(
-        video_path=master_video,
-        audio_dir=run_dir / "audio",
-        script=script_doc,
-        expected_w=cfg.width,
-        expected_h=cfg.height,
-        captions_path=captions_path if cfg.captions_enabled else None,
-        scene_clips=clip_paths if not is_test else None,  # skip LLM visual review in tests
-        durations=[a.duration_sec for a in scene_audios] if not is_test else None,
-        llm=deps.llm if not is_test else None,
-        qa_dir=qa_dir,
-        skip_audio_check=is_test,
-        skip_pacing_check=is_test,
-    )
-    # Log QA results
+    # Log final QA results
     qa_log = run_dir / "qa_report.json"
     _write_json(qa_log, {
         "passed": qa_result.passed,
@@ -197,7 +217,6 @@ def _render_social_video(
             for i in qa_result.issues
         ],
     })
-    # Add QA errors to validation_errors so they're visible in the draft
     for issue in qa_result.issues:
         if issue.severity == "error":
             validation_errors.append(f"[QA {issue.category}] scene {issue.scene_id}: {issue.message}")
@@ -304,7 +323,13 @@ def approve_and_publish(
         if package.platform in existing and existing[package.platform].publish_status == "published":
             results.append(existing[package.platform])
             continue
-        result = deps.publisher.publish(item, package)
+        if isinstance(deps.publisher, PublisherRegistry):
+            pub = deps.publisher.get(package.platform)
+            if pub is None:
+                continue
+        else:
+            pub = deps.publisher
+        result = pub.publish(item, package)
         if result.packaging_status == "pending":
             result.packaging_status = "packaged"
         deps.store.upsert_publish_result(source_id, result)

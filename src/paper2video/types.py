@@ -17,7 +17,7 @@ ContentState = Literal[
     "failed",
 ]
 ReviewActionType = Literal["approve", "revise", "skip"]
-PublishPlatform = Literal["tiktok", "instagram", "xiaohongshu"]
+PublishPlatform = Literal["tiktok", "instagram", "xiaohongshu", "youtube"]
 PublishStatus = Literal["pending", "packaged", "published", "failed"]
 SourceType = Literal["openai_blog", "anthropic_blog", "deepmind_blog", "meta_ai_blog", "arxiv"]
 

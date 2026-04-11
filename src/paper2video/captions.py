@@ -41,28 +41,46 @@ def _split_narration(text: str, max_words: int = 6) -> list[str]:
 
 
 def build_srt(scenes: list[Scene], durations: list[float]) -> str:
+    """Build SRT with word-count-weighted timing per chunk.
+
+    Each chunk's duration is proportional to its word count relative to
+    the scene's total words. This tracks natural speech pacing better
+    than even division (longer phrases get more time).
+
+    A 0.1s lead-in offset on each scene makes subtitles appear slightly
+    after the audio starts, which feels more synced perceptually.
+    """
     lines: list[str] = []
     index = 1
-    start = 0.0
+    scene_start = 0.0
     for scene, duration in zip(scenes, durations):
-        end = start + duration
+        scene_end = scene_start + duration
         chunks = _split_narration(scene.narration.strip())
         if not chunks:
             chunks = [scene.narration.strip()]
-        chunk_duration = duration / len(chunks)
-        for chunk in chunks:
-            chunk_end = min(start + chunk_duration, end)
+
+        # Weight by word count
+        word_counts = [len(c.split()) for c in chunks]
+        total_words = sum(word_counts) or 1
+        # Reserve 0.1s lead-in and 0.1s tail
+        usable = max(duration - 0.2, 0.5)
+        cursor = scene_start + 0.1  # lead-in offset
+
+        for chunk, wc in zip(chunks, word_counts):
+            chunk_dur = usable * (wc / total_words)
+            chunk_end = min(cursor + chunk_dur, scene_end)
             lines.extend(
                 [
                     str(index),
-                    f"{format_srt_timestamp(start)} --> {format_srt_timestamp(chunk_end)}",
+                    f"{format_srt_timestamp(cursor)} --> {format_srt_timestamp(chunk_end)}",
                     chunk,
                     "",
                 ]
             )
             index += 1
-            start = chunk_end
-        start = end
+            cursor = chunk_end
+
+        scene_start = scene_end
     return "\n".join(lines).strip() + "\n"
 
 

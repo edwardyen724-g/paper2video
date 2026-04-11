@@ -18,6 +18,15 @@ dependencies = [
 [project.optional-dependencies]
 tts = ["kokoro>=0.7.0", "soundfile>=0.12.1"]
 manim = ["manim>=0.18.0"]
+youtube = ["google-api-python-client>=2.100.0", "google-auth-oauthlib>=1.2.0", "google-auth>=2.25.0"]
+tiktok = ["httpx>=0.27.0"]
+instagram = ["httpx>=0.27.0"]
+social = [
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.2.0",
+    "google-auth>=2.25.0",
+    "httpx>=0.27.0",
+]
 dev = ["pytest>=8.3.0", "pytest-mock>=3.14.0", "ruff>=0.6.0"]
 
 [project.scripts]

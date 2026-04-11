@@ -76,6 +76,20 @@ class CommandPublisher(Publisher):
         )
 
 
+class PublisherRegistry:
+    """Routes publish calls to the right Publisher per platform."""
+
+    def __init__(self, default: Publisher | None = None):
+        self._publishers: dict[str, Publisher] = {}
+        self._default = default
+
+    def register(self, platform: str, publisher: Publisher) -> None:
+        self._publishers[platform] = publisher
+
+    def get(self, platform: str) -> Publisher | None:
+        return self._publishers.get(platform) or self._default
+
+
 def build_platform_packages(item: ContentItem, master_video_path: Path, out_dir: Path) -> list[PlatformPackage]:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -85,9 +99,12 @@ def build_platform_packages(item: ContentItem, master_video_path: Path, out_dir:
     else:
         base_hashtags.append("AILabs")
     packages: list[PlatformPackage] = []
-    for platform in ("tiktok", "instagram", "xiaohongshu"):
+    for platform in ("tiktok", "instagram", "xiaohongshu", "youtube"):
         title = item.title[:80]
         caption = f"{item.summary}\n\nRead more: {item.canonical_url}"
+        if platform == "youtube":
+            title = f"{item.title[:70]} #Shorts"
+            caption = f"{item.summary}\n\n{' '.join('#' + h for h in base_hashtags)}\n\nRead more: {item.canonical_url}"
         thumbnail_path = out_dir / f"{platform}_cover.png"
         candidate_thumbnail = master_video_path.parent / "images" / "scene_001.png"
         if candidate_thumbnail.exists():
@@ -101,6 +118,8 @@ def build_platform_packages(item: ContentItem, master_video_path: Path, out_dir:
             "source_url": item.canonical_url,
             "thumbnail_path": str(thumbnail_path) if thumbnail_path.exists() else "",
         }
+        if platform == "youtube":
+            payload["description"] = caption
         metadata_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         packages.append(
             PlatformPackage(

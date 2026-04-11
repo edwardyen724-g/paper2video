@@ -307,20 +307,40 @@ Or build the fill relative to the background:
 
 === END PROGRESS BAR ===
 
-=== PACING: SOMETHING MUST MOVE EVERY 2-3 SECONDS ===
+=== ANIMATION DENSITY (critical for social engagement) ===
 
-This is critical for social video retention. Static holds kill engagement.
-Your animation must have continuous visual motion. Techniques:
-- Stagger element appearances with lag_ratio=0.15 on group animations
-- Use .animate.shift(), .animate.set_color(), .animate.scale(1.05) for micro-movements
-- After a group appears, immediately start building the next element
-- Use Indicate() or Flash() on key elements while the narrator makes a point
-- Crossfade between states with ReplacementTransform — don't just plop things down
+Static frames kill retention. Your scene MUST have continuous visual motion.
 
-NEVER write a self.wait() longer than 1.5 seconds. Prefer self.wait(0.3) to self.wait(0.5)
-between animations for a snappy, energetic feel.
+MINIMUM REQUIREMENTS:
+- At least 4 self.play() calls per scene. More is better. Fewer = too static.
+- Maximum self.wait() is 0.5 seconds. NEVER write self.wait(1) or longer.
+- After ANY element appears, the NEXT animation must start within 0.3 seconds.
+- Total run_time across all animations must fill ~{duration:.1f} seconds.
 
-Target duration is {duration:.1f} seconds — pace your run_time= values to fill it tightly.
+DENSITY TECHNIQUES (use at least 3 per scene):
+- Stagger group elements: self.play(*[FadeIn(e, shift=UP*0.2) for e in group], lag_ratio=0.15)
+- Micro-motion while narrating: self.play(obj.animate.scale(1.05), run_time=0.8) between major beats
+- Color transitions: self.play(rect.animate.set_fill(NEW_COLOR, opacity=0.5), run_time=0.4)
+- Indicate/Flash for emphasis: self.play(Indicate(key_obj, scale_factor=1.08), run_time=0.6)
+- Progressive reveal: don't show everything at once — build the diagram element by element
+- Arrow creation between existing elements: self.play(GrowArrow(arrow), run_time=0.5)
+
+PACING TEMPLATE for an 8-second scene:
+    0.0s: title writes in (run_time=0.8)
+    0.8s: wait(0.3)
+    1.1s: first element fades in (run_time=0.6)
+    1.7s: second element fades in (run_time=0.6)
+    2.3s: arrow connects them (run_time=0.5)
+    2.8s: wait(0.3)
+    3.1s: third element appears (run_time=0.6)
+    3.7s: highlight/indicate key element (run_time=0.6)
+    4.3s: label or caption fades in (run_time=0.5)
+    4.8s: micro-motion on the group (run_time=0.5)
+    5.3s: wait(0.3)
+    5.6s: another emphasis beat (run_time=0.6)
+    6.2s: closing visual beat (run_time=0.5)
+    6.7s: wait(0.5) — end hold
+    Total: ~7.2s of motion in an 8s scene. That's the target density.
 
 === END SOCIAL MODE ===
 """
@@ -382,7 +402,7 @@ class ManimRenderError(Exception):
         return self.message
 
 
-def lint_manim_code(code: str) -> list[str]:
+def lint_manim_code(code: str, social_mode: bool = False) -> list[str]:
     """Static checks against the patterns we know cause cutoffs and render failures.
 
     Returns a list of error messages. Empty list means the code passed lint.
@@ -443,6 +463,26 @@ def lint_manim_code(code: str) -> list[str]:
         if s.startswith("import ") or s.startswith("from "):
             if not (s.startswith("from manim") or s == "from manim import *"):
                 errors.append(f"Line {i}: forbidden import. Only `from manim import *` is allowed.")
+
+    # 6b. Minimum animation density — at least 4 self.play() calls per scene.
+    play_count = sum(1 for line in lines if "self.play(" in line.split("#", 1)[0])
+    if play_count < 4:
+        errors.append(
+            f"Only {play_count} self.play() calls — too static for social video. "
+            f"Need at least 4 animations per scene. Add progressive reveals, "
+            f"Indicate/Flash for emphasis, color transitions, or micro-motions."
+        )
+
+    # 6c. No long waits — max self.wait(0.5) in social mode.
+    wait_pattern = re.compile(r"self\.wait\s*\(\s*(\d+(?:\.\d+)?)\s*\)")
+    for i, line in enumerate(lines, start=1):
+        stripped = line.split("#", 1)[0]
+        m = wait_pattern.search(stripped)
+        if m and float(m.group(1)) > 1.0:
+            errors.append(
+                f"Line {i}: self.wait({m.group(1)}) is too long for social video. "
+                f"Max wait is 0.5s between animations. Use more animation beats instead."
+            )
 
     # 7a0. Progress bar fill alignment — move_to(bg.get_left() + RIGHT * ...) is fragile
     for i, line in enumerate(lines, start=1):
