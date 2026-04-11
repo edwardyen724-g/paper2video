@@ -273,20 +273,32 @@ Your output MUST follow this structure.
 
 PORTRAIT_ADDENDUM = """
 
-=== PORTRAIT MODE (9:16 VERTICAL VIDEO) ===
+=== SOCIAL SHORT-FORM VIDEO MODE ===
 
-This scene will be rendered at 1080x1920 (portrait / vertical), NOT landscape.
-Manim's frame is still 14.22 x 8.0 units, but the RENDER will stretch it to 9:16.
-This means:
-- Horizontal space is VERY limited. Keep everything narrow (max_w=7.0 in fit()).
-- Vertical space is generous. Stack elements vertically with .arrange(DOWN, buff=0.8).
-- Title should be at font_size=36, body at font_size=24.
-- Use VGroup(...).arrange(DOWN, ...) and fit(group, max_w=7.0, max_h=6.0) for layouts.
-- Avoid placing elements past x=±3.5 — they WILL be cut off in portrait render.
-- The frame center is still ORIGIN. Think of a tall, narrow column of content.
-- Prefer fewer, larger elements stacked vertically over wide horizontal layouts.
+This is a short-form social video (TikTok/Reels). The scene will be rendered at standard
+landscape resolution then reframed into a portrait container. The Manim content occupies
+the middle band. This means:
+- Use the FULL 14.22 x 8.0 frame — it will be scaled to fill the middle of the portrait.
+- Title text goes in a separate zone above the animation, so you do NOT need to draw a title
+  inside the Manim scene. Focus entirely on the ANIMATION.
+- Keep visual content centered. Avoid pushing things to extreme edges.
 
-=== END PORTRAIT MODE ===
+=== PACING: SOMETHING MUST MOVE EVERY 2-3 SECONDS ===
+
+This is critical for social video retention. Static holds kill engagement.
+Your animation must have continuous visual motion. Techniques:
+- Stagger element appearances with lag_ratio=0.15 on group animations
+- Use .animate.shift(), .animate.set_color(), .animate.scale(1.05) for micro-movements
+- After a group appears, immediately start building the next element
+- Use Indicate() or Flash() on key elements while the narrator makes a point
+- Crossfade between states with ReplacementTransform — don't just plop things down
+
+NEVER write a self.wait() longer than 1.5 seconds. Prefer self.wait(0.3) to self.wait(0.5)
+between animations for a snappy, energetic feel.
+
+Target duration is {duration:.1f} seconds — pace your run_time= values to fill it tightly.
+
+=== END SOCIAL MODE ===
 """
 
 CODEGEN_USER = """Generate a Manim scene for scene {scene_id} of an explainer video.
@@ -582,7 +594,7 @@ def render_manim_scene(
     )
     system_prompt = CODEGEN_SYSTEM.format(duration=duration_sec)
     if is_portrait:
-        system_prompt += PORTRAIT_ADDENDUM
+        system_prompt += PORTRAIT_ADDENDUM.format(duration=duration_sec)
 
     last_code = ""
     last_err = ""

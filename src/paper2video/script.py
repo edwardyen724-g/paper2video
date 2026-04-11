@@ -62,14 +62,37 @@ Examples of BAD directions (DO NOT DO THIS):
 - "Animate the text appearing"
 """ 
 
-SOCIAL_SCRIPT_PROMPT = """You are writing a 45-60 second vertical social video about a technical article.
-Audience: curious builders scrolling TikTok, Instagram Reels, or Xiaohongshu.
+SOCIAL_SCRIPT_PROMPT = """You are writing a 45-second vertical social video about a technical article.
+Platform: TikTok, Instagram Reels, Xiaohongshu.
+Audience: curious builders who are scrolling FAST. You have 6 seconds to hook them.
 
-Your job is to explain the article FAST and CLEARLY:
-- Hook the viewer in the first scene.
-- Explain only the 2-4 most important ideas.
-- End with why it matters.
-- Prefer simple, visual scenes over dense detail.
+=== PACING RULES (backed by platform retention data) ===
+
+1. HOOK IN 6 SECONDS. Scene 1 must be a provocative question, a surprising claim, or a
+   "wait, what?" moment. NOT "Today we'll look at..." or "Let me explain...".
+   Good hooks: "What if your AI agent thinks it's doing great... but it's actually terrible?"
+   Bad hooks: "In this video we explore the concept of..."
+
+2. EVERY SCENE IS 8-12 SECONDS. No scene longer than 12 seconds. Viewers drop off after 8s
+   of the same visual. If you need more time for an idea, split it into two scenes.
+
+3. SOMETHING MUST CHANGE EVERY 3 SECONDS inside each scene. The animation direction must
+   describe at least 2-3 distinct visual beats per scene — elements appearing, transforming,
+   highlighting, moving. No static holds longer than 2 seconds.
+
+4. TOTAL VIDEO: 40-50 seconds of narration across 5-6 scenes. Target 45 seconds.
+   At ~150 words/minute, that's roughly 100-120 words of total narration.
+
+5. VARIABLE PACING. Scene 1 (hook) is fast — 6-8 seconds. Middle scenes are 8-12 seconds.
+   Final scene (payoff) is 8-10 seconds. Don't make every scene the same length.
+
+6. LAST SCENE answers "why should I care?" in one punchy sentence. End on a forward-looking
+   statement, not a summary.
+
+7. NARRATION IS SHORT. Each scene gets 1 sentence, max 2 short sentences. Every word must
+   earn its place. Cut adjectives. Cut filler. If it reads like a textbook, rewrite it.
+
+=== END PACING RULES ===
 
 INPUT ARTICLE:
 {source_text}
@@ -82,18 +105,18 @@ RESEARCH NOTES:
 
 Produce JSON only with this exact shape:
 {{
-  "title": "short punchy title",
+  "title": "punchy title (max 8 words, no colons)",
   "summary": "one-sentence summary",
   "scenes": [
     {{
       "id": 1,
-      "narration": "spoken line for this scene, 1-2 sentences",
+      "narration": "one short spoken sentence — this is the HOOK",
       "visual_type": "manim",
       "visual_spec": {{
-        "title": "short on-screen title",
-        "direction": "clear visual blocking for the animation",
-        "elements": ["short list", "of objects"],
-        "caption": "optional short callout"
+        "title": "2-4 word on-screen title",
+        "direction": "REQUIRED: describe 2-3 visual beats that happen during this scene. What appears first, what changes, what the viewer's eye follows. Use verbs: appears, slides, transforms, highlights, connects, pulses. Something must move every 3 seconds.",
+        "elements": ["key visual objects"],
+        "caption": "optional 1-line callout"
       }},
       "duration_hint_sec": 8.0
     }}
@@ -101,12 +124,12 @@ Produce JSON only with this exact shape:
 }}
 
 Rules:
-- 4 to 6 scenes total.
-- Total spoken length should fit roughly 45-60 seconds.
-- Scene 1 must be a hook.
-- Last scene must answer why this matters.
-- Keep narration in plain English.
-- Output JSON only.
+- 5 to 6 scenes. No more, no less.
+- Scene 1: hook (6-8 sec). Scenes 2-4/5: explanation (8-12 sec). Last scene: payoff (8-10 sec).
+- Total narration ~100-120 words (45 seconds at speaking pace).
+- Every direction field must describe multiple visual beats, not a static layout.
+- No jargon without a gloss. Plain English only.
+- Output JSON only. No prose. No code fences.
 """
 
 SOCIAL_REVISION_PROMPT = """You are revising an existing short-form social video script.
