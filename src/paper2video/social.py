@@ -169,7 +169,8 @@ def _render_social_video(
         if not bad_scene_ids or qa_attempt >= max_qa_retries:
             break
 
-        # Re-render bad scenes: delete cached Manim clips so they regenerate
+        # Re-render bad scenes: delete cached Manim clips and write QA feedback
+        # so the Manim renderer knows what specific visual problem to fix.
         for sid in bad_scene_ids:
             manim_clip = run_dir / "manim" / f"scene_{sid:03d}.mp4"
             manim_work = run_dir / "manim" / f"scene_{sid:03d}_work"
@@ -177,6 +178,15 @@ def _render_social_video(
             if manim_work.exists():
                 import shutil
                 shutil.rmtree(manim_work, ignore_errors=True)
+            # Write QA feedback for this scene so renderer can include it in the prompt
+            scene_issues = [i for i in qa_result.issues if i.scene_id == sid]
+            if scene_issues:
+                feedback_file = run_dir / "manim" / f"scene_{sid:03d}_qa_feedback.txt"
+                feedback_file.parent.mkdir(parents=True, exist_ok=True)
+                feedback_file.write_text(
+                    "\n".join(f"- [{i.category}] {i.message}" for i in scene_issues),
+                    encoding="utf-8",
+                )
 
         # Re-render and rebuild clips for bad scenes
         for idx, scene in enumerate(script_doc.scenes):

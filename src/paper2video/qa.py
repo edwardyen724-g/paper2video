@@ -256,12 +256,16 @@ def _llm_review_frame(
                 ],
             }],
         )
-        import json
+        import json, re
         raw = msg.content[0].text.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1]
             if raw.endswith("```"):
                 raw = raw.rsplit("```", 1)[0]
+        # Extract the first JSON object if there's surrounding text
+        json_match = re.search(r'\{[\s\S]*\}', raw)
+        if json_match:
+            raw = json_match.group(0)
         result = json.loads(raw)
         issues = []
         for item in result.get("issues", []):

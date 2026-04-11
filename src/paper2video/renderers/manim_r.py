@@ -464,24 +464,26 @@ def lint_manim_code(code: str, social_mode: bool = False) -> list[str]:
             if not (s.startswith("from manim") or s == "from manim import *"):
                 errors.append(f"Line {i}: forbidden import. Only `from manim import *` is allowed.")
 
-    # 6b. Minimum animation density — at least 4 self.play() calls per scene.
-    play_count = sum(1 for line in lines if "self.play(" in line.split("#", 1)[0])
-    if play_count < 4:
-        errors.append(
-            f"Only {play_count} self.play() calls — too static for social video. "
-            f"Need at least 4 animations per scene. Add progressive reveals, "
-            f"Indicate/Flash for emphasis, color transitions, or micro-motions."
-        )
+    # 6b. Minimum animation density (social mode only)
+    if social_mode:
+        play_count = sum(1 for line in lines if "self.play(" in line.split("#", 1)[0])
+        if play_count < 4:
+            errors.append(
+                f"Only {play_count} self.play() calls — too static for social video. "
+                f"Need at least 4 animations per scene. Add progressive reveals, "
+                f"Indicate/Flash for emphasis, color transitions, or micro-motions."
+            )
 
-    # 6c. No long waits — max self.wait(0.5) in social mode.
+    # 6c. No long waits in social mode (max 1.0s; longform allows up to 3.5s)
+    max_wait = 1.0 if social_mode else 3.5
     wait_pattern = re.compile(r"self\.wait\s*\(\s*(\d+(?:\.\d+)?)\s*\)")
     for i, line in enumerate(lines, start=1):
         stripped = line.split("#", 1)[0]
         m = wait_pattern.search(stripped)
-        if m and float(m.group(1)) > 1.0:
+        if m and float(m.group(1)) > max_wait:
             errors.append(
-                f"Line {i}: self.wait({m.group(1)}) is too long for social video. "
-                f"Max wait is 0.5s between animations. Use more animation beats instead."
+                f"Line {i}: self.wait({m.group(1)}) is too long. "
+                f"Max wait is {max_wait}s. Use more animation beats instead."
             )
 
     # 7a0. Progress bar fill alignment — move_to(bg.get_left() + RIGHT * ...) is fragile
@@ -663,12 +665,39 @@ def render_manim_scene(
     is_portrait = resolution and resolution[1] > resolution[0]
 
     visual_direction = _compose_visual_direction(scene.visual_spec or {})
+
+    # Check for QA feedback from a previous render attempt
+    qa_feedback_file = out_dir / f"scene_{scene.id:03d}_qa_feedback.txt"
+    qa_feedback = ""
+    if qa_feedback_file.exists():
+        qa_feedback = qa_feedback_file.read_text(encoding="utf-8").strip()
+        qa_feedback_file.unlink()  # consume it
+
+    qa_section = ""
+    if qa_feedback:
+        qa_section = f"""
+
+=== QA FEEDBACK FROM PREVIOUS RENDER (FIX THESE) ===
+The previous version of this scene was rendered and reviewed. These specific
+visual problems were found. You MUST fix them in this version:
+
+{qa_feedback}
+
+Common fixes:
+- "cut off at left/right edge": move elements inward, use x within ±4.0
+- "text overlap": increase spacing, reduce font size, or rearrange layout
+- "too sparse/empty": add more visual elements, use the full frame
+- "misalignment": use .align_to() instead of manual position math
+=== END QA FEEDBACK ===
+"""
+
     user_prompt = CODEGEN_USER.format(
         scene_id=scene.id,
         narration=scene.narration,
         visual_direction=visual_direction,
         duration=duration_sec,
-    )
+    ) + qa_section
+
     system_prompt = CODEGEN_SYSTEM.format(duration=duration_sec)
     if is_portrait:
         system_prompt += PORTRAIT_ADDENDUM.format(duration=duration_sec)
@@ -697,7 +726,7 @@ def render_manim_scene(
         code_file.write_text(code, encoding="utf-8")
 
         # Static lint pass first — cheap and catches the obvious bugs.
-        lint_errors = lint_manim_code(code)
+        lint_errors = lint_manim_code(code, social_mode=is_portrait or False)
         if lint_errors:
             last_lint = lint_errors
             last_err = "Lint failed:\n" + "\n".join(lint_errors)
