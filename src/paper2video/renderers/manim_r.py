@@ -276,12 +276,36 @@ PORTRAIT_ADDENDUM = """
 === SOCIAL SHORT-FORM VIDEO MODE ===
 
 This is a short-form social video (TikTok/Reels). The scene will be rendered at standard
-landscape resolution then reframed into a portrait container. The Manim content occupies
-the middle band. This means:
-- Use the FULL 14.22 x 8.0 frame — it will be scaled to fill the middle of the portrait.
-- Title text goes in a separate zone above the animation, so you do NOT need to draw a title
-  inside the Manim scene. Focus entirely on the ANIMATION.
-- Keep visual content centered. Avoid pushing things to extreme edges.
+landscape resolution then CROPPED and SCALED to fill a portrait container. The left and
+right edges of the Manim frame WILL BE CUT OFF during reframing.
+
+CRITICAL SAFE AREA FOR SOCIAL:
+- The reframe crops ~16% off each side of the Manim frame.
+- You MUST keep ALL content within x = -4.5 to x = +4.5 (not the usual ±6.0).
+- Content at x=±5 or beyond WILL be cropped and partially invisible.
+- Update your fit() helper to use max_w=9.0 (not 11.0) for social mode.
+- Use buff=0.8 or more in .to_edge() calls.
+
+ALSO: title text is NOT added in a separate zone. Your Manim scene IS the full visual.
+Include a short title inside the animation if the direction calls for one.
+
+=== PROGRESS BAR / FILL BAR ALIGNMENT ===
+
+When drawing a progress bar (background rect + fill rect), ALWAYS align the fill to the
+LEFT edge of the background, not the center:
+
+    WRONG: fill.move_to(bg.get_center())        # fill centered, not left-aligned
+    WRONG: fill.move_to(bg.get_left() + RIGHT * (fill_width / 2))  # off by half sometimes
+
+    CORRECT:
+        fill.align_to(bg, LEFT)   # left edges match exactly
+        fill.align_to(bg, DOWN)   # bottom edges match (if same height)
+
+Or build the fill relative to the background:
+        fill = Rectangle(width=fill_w, height=bg_h, color=GREEN, fill_opacity=0.9)
+        fill.next_to(bg.get_left(), RIGHT, buff=0)
+
+=== END PROGRESS BAR ===
 
 === PACING: SOMETHING MUST MOVE EVERY 2-3 SECONDS ===
 
@@ -419,6 +443,19 @@ def lint_manim_code(code: str) -> list[str]:
         if s.startswith("import ") or s.startswith("from "):
             if not (s.startswith("from manim") or s == "from manim import *"):
                 errors.append(f"Line {i}: forbidden import. Only `from manim import *` is allowed.")
+
+    # 7a0. Progress bar fill alignment — move_to(bg.get_left() + RIGHT * ...) is fragile
+    for i, line in enumerate(lines, start=1):
+        stripped = line.split("#", 1)[0]
+        if "get_left()" in stripped and "move_to" in stripped and "RIGHT" in stripped:
+            # Pattern: fill.move_to(bg.get_left() + RIGHT * (width / 2))
+            # This is the #1 source of misaligned progress bars
+            errors.append(
+                f"Line {i}: fragile progress bar alignment pattern. "
+                f"Use `.align_to(bg, LEFT)` instead of "
+                f"`.move_to(bg.get_left() + RIGHT * ...)` — the math is error-prone "
+                f"and produces visible misalignment."
+            )
 
     # 7a. No dangerous .scale(factor) calls — causes unreadable text from compounding.
     scale_pattern = re.compile(r"\.(?:animate\.)?scale\s*\(\s*(-?\d+(?:\.\d+)?)\s*[,)]")

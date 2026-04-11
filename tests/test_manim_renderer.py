@@ -197,6 +197,15 @@ def test_lint_catches_uncreate_at_end():
     assert any("Uncreate" in e for e in errors)
 
 
+def test_lint_catches_fragile_progress_bar_alignment():
+    bad = GOOD_CODE.replace(
+        "self.play(Write(title))",
+        "fill.move_to(bg.get_left() + RIGHT * (w / 2))\n        self.play(Write(title))",
+    )
+    errors = lint_manim_code(bad)
+    assert any("progress bar" in e.lower() or "align_to" in e for e in errors)
+
+
 def test_lint_catches_fit_call_without_definition():
     bad = """\
 from manim import *
