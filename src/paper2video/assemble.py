@@ -102,30 +102,25 @@ def reframe_for_portrait(
     ffmpeg = _ffmpeg()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    top_h = 200
-    mid_h = 1080
-    bot_h = portrait_h - top_h - mid_h  # 640 for 1920 total
+    # Layout for portrait social video:
+    # - Scale Manim to fill as much of the portrait frame as possible
+    # - Reserve bottom ~350px for subtitles
+    # - Manim animation gets the top ~1570px of the 1920px frame
+    #
+    # Strategy: scale the 1280x720 Manim output so its WIDTH = portrait_w (1080),
+    # which makes it 1080x607. Then scale it UP by 2x to 2160x1214 and crop to
+    # fill a 1080x1570 region. This makes the animation big and prominent.
+    sub_zone = 450  # bottom zone reserved for subtitles
+    anim_h = portrait_h - sub_zone  # 1470px for animation on 1920 total
+    scale_w = int(portrait_w * 1.5)  # 1.5x upscale — enough to fill without harsh cropping
 
-    # Build the filter:
-    # 1. Scale the manim video to fit 1080 wide, then crop to 1080x1080 from center
-    # 2. Create a black canvas at portrait_w x portrait_h
-    # 3. Overlay the cropped manim at y=top_h
-    # 4. Draw title text in the top zone
-    title_escaped = title_text.replace("'", "\u2019").replace(":", " -").replace("\\", "")
-    title_filter = ""
-    if title_text:
-        title_filter = (
-            f",drawtext=text='{title_escaped}'"
-            f":fontsize=42:fontcolor=white"
-            f":x=(w-text_w)/2:y=({top_h}-text_h)/2"
-            f":font=Arial"
-        )
-
-    # Scale manim to fill portrait_w wide, then pad to mid_h tall (centered, black padding)
+    # Scale Manim to 1.5x width, pad to ensure enough height, then crop to anim_h
     vf = (
-        f"[0:v]scale={portrait_w}:-1,pad={portrait_w}:{mid_h}:(ow-iw)/2:(oh-ih)/2:black[manim];"
+        f"[0:v]scale={scale_w}:-1,"
+        f"pad={scale_w}:{anim_h}:(ow-iw)/2:(oh-ih)/2:black,"
+        f"crop={portrait_w}:{anim_h}:(iw-{portrait_w})/2:0[manim];"
         f"color=black:s={portrait_w}x{portrait_h}:d={duration_sec:.3f}:r={fps}[bg];"
-        f"[bg][manim]overlay=0:{top_h}:shortest=1{title_filter}"
+        f"[bg][manim]overlay=0:0:shortest=1"
     )
 
     # Two-pass approach: first reframe video, then mux audio
@@ -146,9 +141,11 @@ def reframe_for_portrait(
     if res.returncode != 0:
         # Fallback without drawtext (font might not be available)
         vf_simple = (
-            f"[0:v]scale={portrait_w}:-1,pad={portrait_w}:{mid_h}:(ow-iw)/2:(oh-ih)/2:black[manim];"
+            f"[0:v]scale={scale_w}:-1,"
+            f"pad={scale_w}:{anim_h}:(ow-iw)/2:(oh-ih)/2:black,"
+            f"crop={portrait_w}:{anim_h}:(iw-{portrait_w})/2:0[manim];"
             f"color=black:s={portrait_w}x{portrait_h}:d={duration_sec:.3f}:r={fps}[bg];"
-            f"[bg][manim]overlay=0:{top_h}:shortest=1"
+            f"[bg][manim]overlay=0:0:shortest=1"
         )
         cmd_video_simple = [
             ffmpeg, "-y",

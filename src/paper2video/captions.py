@@ -78,17 +78,16 @@ def burn_subtitles(
     captions_filter = str(captions_path.resolve()).replace("\\", "/").replace(":", "\\:")
 
     if portrait:
-        # Portrait (1080x1920) with reframed layout:
-        # Top 200px = title, middle 1080px = animation, bottom 640px = subtitle zone
-        # MarginV=200 pushes text 200px up from bottom edge → well inside the 640px zone
-        # FontSize=16 is readable on phone without overlapping animation
+        # Portrait: use force_style with explicit PlayResY to match our 1920px frame.
+        # Without PlayResY, ffmpeg's ASS renderer assumes 288 and scales MarginV
+        # proportionally, placing subtitles in the wrong position.
         style = (
-            "FontName=Arial,FontSize=16,PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,"
-            "Alignment=2,MarginV=200,MarginL=60,MarginR=60"
+            "PlayResX=1080,PlayResY=1920,"
+            "FontName=Arial,FontSize=38,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,"
+            "Alignment=2,MarginV=150,MarginL=80,MarginR=80"
         )
     else:
-        # Landscape (1920x1080): original style
         style = (
             "FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,"
             "OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,"
