@@ -11,6 +11,7 @@ from .ingest import IngestedDoc, extract_from_url
 from .llm import LLMClient
 from .pipeline import _render_scene_visual
 from .publish import Publisher, build_platform_packages
+from .qa import run_qa, QAResult
 from .research import research
 from .review import ReviewClient, parse_telegram_message
 from .script import revise_social_script, write_social_script
@@ -153,6 +154,40 @@ def _render_social_video(
         captions_path=captions_path if cfg.captions_enabled else None,
         expected_size=(cfg.width, cfg.height),
     )
+
+    # Automated QA: programmatic checks + visual LLM review
+    qa_dir = run_dir / "qa"
+    from .tts import FakeTTS
+    from .llm import FakeLLMClient
+    is_test = isinstance(deps.tts, FakeTTS) or isinstance(deps.llm, FakeLLMClient)
+    qa_result = run_qa(
+        video_path=master_video,
+        audio_dir=run_dir / "audio",
+        script=script_doc,
+        expected_w=cfg.width,
+        expected_h=cfg.height,
+        captions_path=captions_path if cfg.captions_enabled else None,
+        scene_clips=clip_paths if not is_test else None,  # skip LLM visual review in tests
+        durations=[a.duration_sec for a in scene_audios] if not is_test else None,
+        llm=deps.llm if not is_test else None,
+        qa_dir=qa_dir,
+        skip_audio_check=is_test,
+        skip_pacing_check=is_test,
+    )
+    # Log QA results
+    qa_log = run_dir / "qa_report.json"
+    _write_json(qa_log, {
+        "passed": qa_result.passed,
+        "issues": [
+            {"severity": i.severity, "scene_id": i.scene_id, "category": i.category, "message": i.message}
+            for i in qa_result.issues
+        ],
+    })
+    # Add QA errors to validation_errors so they're visible in the draft
+    for issue in qa_result.issues:
+        if issue.severity == "error":
+            validation_errors.append(f"[QA {issue.category}] scene {issue.scene_id}: {issue.message}")
+
     draft_item = item.model_copy(
         update={
             "latest_run_dir": str(run_dir),
