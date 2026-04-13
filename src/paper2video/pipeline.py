@@ -56,8 +56,12 @@ def _render_scene_visual(
     run_dir: Path,
     llm: LLMClient,
     cfg: PipelineConfig,
+    theme_seed: str | None = None,
 ) -> tuple[Path, str]:
-    """Render one scene's visual track. Returns (mp4_or_png_path, kind) where kind is 'video' or 'image'."""
+    """Render one scene's visual track. Returns (mp4_or_png_path, kind) where kind is 'video' or 'image'.
+
+    theme_seed: deterministic seed for slide color/layout variation (e.g. source_id).
+    """
     if cfg.use_manim:
         try:
             manim_dir = run_dir / "manim"
@@ -84,7 +88,7 @@ def _render_scene_visual(
 
     # Fallback: matplotlib slide
     img_dir = run_dir / "images"
-    png = render_slide(scene, img_dir, size=(cfg.width, cfg.height))
+    png = render_slide(scene, img_dir, size=(cfg.width, cfg.height), theme_seed=theme_seed)
     return png, "image"
 
 

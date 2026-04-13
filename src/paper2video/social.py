@@ -112,6 +112,7 @@ def _render_social_video(
                     "height": cfg.height,
                     "fps": cfg.fps,
                 })(),
+                theme_seed=item.source_id,
             )
         )
 
