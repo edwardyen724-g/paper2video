@@ -289,6 +289,11 @@ CRITICAL SAFE AREA FOR SOCIAL:
 ALSO: title text is NOT added in a separate zone. Your Manim scene IS the full visual.
 Include a short title inside the animation if the direction calls for one.
 
+TEXT DENSITY RULE: maximum 3 short text labels visible at any moment. The narration
+carries the explanation — the visual should be mostly SHAPES, ARROWS, and DIAGRAMS
+with a few short labels. Do NOT put sentences or long phrases as on-screen text.
+If you need to label something, use 1-3 words max per label (e.g. "Generator", "v2", "A+").
+
 === PROGRESS BAR / FILL BAR ALIGNMENT ===
 
 When drawing a progress bar (background rect + fill rect), ALWAYS align the fill to the
@@ -307,40 +312,35 @@ Or build the fill relative to the background:
 
 === END PROGRESS BAR ===
 
-=== ANIMATION DENSITY (critical for social engagement) ===
+=== ANIMATION PACING (for educational social video) ===
 
-Static frames kill retention. Your scene MUST have continuous visual motion.
+The goal is CLARITY, not speed. The viewer needs time to read each label and
+understand each visual transition. Don't rush.
 
-MINIMUM REQUIREMENTS:
-- At least 4 self.play() calls per scene. More is better. Fewer = too static.
-- Maximum self.wait() is 0.5 seconds. NEVER write self.wait(1) or longer.
-- After ANY element appears, the NEXT animation must start within 0.3 seconds.
-- Total run_time across all animations must fill ~{duration:.1f} seconds.
+RULES:
+- At least 3 self.play() calls per scene. Fewer = too static. But don't cram in 10.
+- Maximum self.wait() is 1.0 seconds. Use 0.5-0.8s waits to let ideas breathe.
+- Keep MINIMAL TEXT on screen. Max 3 short labels at any moment. The narration
+  explains; the visual illustrates with shapes, arrows, and diagrams.
+- Build the diagram progressively — element by element — so the viewer follows along.
+- Use run_time=0.8 to 1.5 for major animations (not 0.3 — that's too fast to follow).
 
-DENSITY TECHNIQUES (use at least 3 per scene):
-- Stagger group elements: self.play(*[FadeIn(e, shift=UP*0.2) for e in group], lag_ratio=0.15)
-- Micro-motion while narrating: self.play(obj.animate.scale(1.05), run_time=0.8) between major beats
-- Color transitions: self.play(rect.animate.set_fill(NEW_COLOR, opacity=0.5), run_time=0.4)
-- Indicate/Flash for emphasis: self.play(Indicate(key_obj, scale_factor=1.08), run_time=0.6)
-- Progressive reveal: don't show everything at once — build the diagram element by element
-- Arrow creation between existing elements: self.play(GrowArrow(arrow), run_time=0.5)
+PACING TEMPLATE for a 9-second scene:
+    0.0s: title writes in (run_time=1.0)
+    1.0s: wait(0.5) — let the viewer read it
+    1.5s: first element fades in (run_time=0.8)
+    2.3s: wait(0.5)
+    2.8s: second element fades in (run_time=0.8)
+    3.6s: arrow connects them (run_time=0.8)
+    4.4s: wait(0.5)
+    4.9s: highlight key element (run_time=0.8)
+    5.7s: caption or label fades in (run_time=0.8)
+    6.5s: wait(0.5) — let it sink in
+    7.0s: closing emphasis beat (run_time=0.8)
+    7.8s: wait(1.0) — final hold, viewer absorbs
+    Total: ~8.8s. Deliberate, readable, not frantic.
 
-PACING TEMPLATE for an 8-second scene:
-    0.0s: title writes in (run_time=0.8)
-    0.8s: wait(0.3)
-    1.1s: first element fades in (run_time=0.6)
-    1.7s: second element fades in (run_time=0.6)
-    2.3s: arrow connects them (run_time=0.5)
-    2.8s: wait(0.3)
-    3.1s: third element appears (run_time=0.6)
-    3.7s: highlight/indicate key element (run_time=0.6)
-    4.3s: label or caption fades in (run_time=0.5)
-    4.8s: micro-motion on the group (run_time=0.5)
-    5.3s: wait(0.3)
-    5.6s: another emphasis beat (run_time=0.6)
-    6.2s: closing visual beat (run_time=0.5)
-    6.7s: wait(0.5) — end hold
-    Total: ~7.2s of motion in an 8s scene. That's the target density.
+TARGET DURATION: {duration:.1f} seconds. Pace your run_time values to fill it.
 
 === END SOCIAL MODE ===
 """
@@ -467,15 +467,14 @@ def lint_manim_code(code: str, social_mode: bool = False) -> list[str]:
     # 6b. Minimum animation density (social mode only)
     if social_mode:
         play_count = sum(1 for line in lines if "self.play(" in line.split("#", 1)[0])
-        if play_count < 4:
+        if play_count < 3:
             errors.append(
                 f"Only {play_count} self.play() calls — too static for social video. "
-                f"Need at least 4 animations per scene. Add progressive reveals, "
-                f"Indicate/Flash for emphasis, color transitions, or micro-motions."
+                f"Need at least 3 animations per scene. Build the diagram progressively."
             )
 
-    # 6c. No long waits in social mode (max 1.0s; longform allows up to 3.5s)
-    max_wait = 1.0 if social_mode else 3.5
+    # 6c. No excessively long waits (social max 1.5s; longform max 3.5s)
+    max_wait = 1.5 if social_mode else 3.5
     wait_pattern = re.compile(r"self\.wait\s*\(\s*(\d+(?:\.\d+)?)\s*\)")
     for i, line in enumerate(lines, start=1):
         stripped = line.split("#", 1)[0]

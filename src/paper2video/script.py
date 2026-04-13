@@ -62,51 +62,46 @@ Examples of BAD directions (DO NOT DO THIS):
 - "Animate the text appearing"
 """ 
 
-SOCIAL_SCRIPT_PROMPT = """You are writing a 45-second vertical social video about a technical article.
-Platform: TikTok, Instagram Reels, Xiaohongshu.
-Audience: curious builders who are scrolling FAST. You have 6 seconds to hook them.
+SOCIAL_SCRIPT_PROMPT = """You are writing a 60-second vertical social video about a technical article.
+Platform: TikTok, Instagram Reels, Xiaohongshu. Channel: @paperin60
+Audience: curious builders who want to UNDERSTAND the idea, not just be entertained.
 
-=== PACING RULES (backed by platform retention data) ===
+=== PACING RULES ===
 
-1. HOOK IN 6 SECONDS. Scene 1 must stop the scroll instantly. Pick ONE of these proven
-   hook formulas and adapt it to the article's main insight:
+The goal is LEARNING, not just retention. The viewer should walk away understanding
+the core idea well enough to explain it to a friend. That means: clear visuals,
+readable text, and enough breathing room for each concept to land.
 
-   FORMULA A — Contrarian claim: "[Everyone thinks X]... but actually [surprising opposite]."
-     Example: "Everyone says RAG is the future of AI memory... but it forgets everything between questions."
+1. HOOK IN 6 SECONDS. Scene 1 must stop the scroll. Pick ONE hook formula:
 
-   FORMULA B — Shocking stat or specific number: "[Specific number] that changes everything."
-     Example: "80% of AI-generated code passes its own tests — and fails in production."
+   A — Contrarian: "[Everyone thinks X]... but actually [surprising opposite]."
+   B — Shocking stat: "[Specific number] that changes everything."
+   C — "What if" scenario: "What if [familiar thing] was actually [reframe]?"
+   D — Direct challenge: "You're doing [common thing] wrong."
+   E — Pattern interrupt: Start mid-thought, as if mid-conversation.
 
-   FORMULA C — "What if" scenario: "What if [familiar thing] was actually [reframe]?"
-     Example: "What if your AI agent grades its own homework... and always gives itself an A?"
+   NEVER start with: "In this video", "Today we'll explore", "Let me explain".
 
-   FORMULA D — Direct challenge: "You're doing [common thing] wrong. Here's why."
-     Example: "You're building AI agents wrong. Here's what Anthropic figured out."
+2. TARGET 55-65 SECONDS total narration across 6-7 scenes.
+   At ~150 words/minute, that's 140-160 words total. Don't go under 130 or over 170.
 
-   FORMULA E — Pattern interrupt: Start mid-thought, as if the viewer walked into a conversation.
-     Example: "...so the agent just quit. Halfway through. Said it was done. It wasn't."
+3. EACH SCENE IS 8-10 SECONDS. Enough time to show ONE idea clearly.
+   Scene 1 (hook): 6-8 seconds.
+   Middle scenes: 8-10 seconds each.
+   Last scene (payoff): 8-10 seconds.
 
-   NEVER start with: "In this video", "Today we'll explore", "Let me explain", "Have you ever wondered".
-   The hook must feel like a CLAIM, not an introduction.
+4. ONE IDEA PER SCENE. Each scene explains exactly ONE concept with ONE clear visual.
+   If a scene tries to do two things, split it. The viewer should never feel rushed.
 
-2. EVERY SCENE IS 8-12 SECONDS. No scene longer than 12 seconds. Viewers drop off after 8s
-   of the same visual. If you need more time for an idea, split it into two scenes.
+5. MINIMAL TEXT ON SCREEN. The animation should show DIAGRAMS and SHAPES, not walls of
+   text. Maximum 3 short text labels visible at any moment (e.g. "Generator", "Evaluator",
+   "Output" — not full sentences). The narration carries the explanation; the visual
+   illustrates it. Let the narrator do the talking.
 
-3. SOMETHING MUST CHANGE EVERY 3 SECONDS inside each scene. The animation direction must
-   describe at least 2-3 distinct visual beats per scene — elements appearing, transforming,
-   highlighting, moving. No static holds longer than 2 seconds.
+6. LAST SCENE answers "why should I care?" in one sentence.
 
-4. TOTAL VIDEO: 40-50 seconds of narration across 5-6 scenes. Target 45 seconds.
-   At ~150 words/minute, that's roughly 100-120 words of total narration.
-
-5. VARIABLE PACING. Scene 1 (hook) is fast — 6-8 seconds. Middle scenes are 8-12 seconds.
-   Final scene (payoff) is 8-10 seconds. Don't make every scene the same length.
-
-6. LAST SCENE answers "why should I care?" in one punchy sentence. End on a forward-looking
-   statement, not a summary.
-
-7. NARRATION IS SHORT. Each scene gets 1 sentence, max 2 short sentences. Every word must
-   earn its place. Cut adjectives. Cut filler. If it reads like a textbook, rewrite it.
+7. NARRATION: each scene gets 1-2 sentences in plain spoken English. Cut jargon.
+   The narration should sound like you're explaining it to a smart friend over coffee.
 
 === END PACING RULES ===
 
